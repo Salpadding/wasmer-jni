@@ -1,10 +1,7 @@
-use alloc::borrow::ToOwned;
-use alloc::collections::BTreeMap;
-use alloc::rc::Rc;
-use alloc::string::*;
-use alloc::vec::*;
+use std::rc::Rc;
+use std::collections::BTreeMap;
 
-use parity_wasm::elements::BlockType;
+use parity_wasm::elements::{BlockType, ResizableLimits};
 use parity_wasm::elements::{
     External, FuncBody, FunctionType, GlobalType, Instruction, Local, Module, Type, ValueType,
 };
@@ -294,6 +291,7 @@ pub struct Instance {
     exports: BTreeMap<String, Rc<WASMFunction>>,
     types: Vec<FunctionType>,
     table: Vec<Option<FunctionInstance>>,
+    table_limit: Option<ResizableLimits>,
 
     // runtime
     globals: Vec<u64>,
@@ -430,7 +428,14 @@ impl Instance {
                     self.globals[i] = self.execute_expr(g.global_type().content_type())?;
                 }
             }
-        }
+        };
+
+        match md.table_section() {
+            None => {},
+            Some(sec) => {
+
+            }
+        };
 
         match md.function_section() {
             None => {}

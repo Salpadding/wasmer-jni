@@ -1,6 +1,3 @@
-use alloc::vec::*;
-use alloc::string::*;
-
 static CHARS: [char; 16] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' ];
 static CHARS_INV: [u8; 104] = [
     0,0,0,0,    0,0,0,0, // 0x08
