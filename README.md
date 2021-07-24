@@ -1,2 +1,3 @@
-# tiny-wasm
-a tiny webAssembly interpreter
+# wasmer-jni
+
+wasmer jni binding, supports metering and host function

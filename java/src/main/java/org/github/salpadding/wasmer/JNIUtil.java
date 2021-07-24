@@ -1,4 +1,4 @@
-package org.github.salpadding.tinywasm;
+package org.github.salpadding.wasmer;
 
 import java.io.File;
 import java.io.FileOutputStream;

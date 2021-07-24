@@ -430,12 +430,6 @@ impl Instance {
             }
         };
 
-        match md.table_section() {
-            None => {},
-            Some(sec) => {
-
-            }
-        };
 
         match md.function_section() {
             None => {}

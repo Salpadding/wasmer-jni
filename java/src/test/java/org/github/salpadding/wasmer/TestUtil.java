@@ -1,4 +1,4 @@
-package org.github.salpadding.tinywasm;
+package org.github.salpadding.wasmer;
 
 import lombok.SneakyThrows;
 

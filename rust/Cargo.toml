@@ -1,5 +1,5 @@
 [package]
-name = "tiny_wasm"
+name = "wasmer_jni"
 version = "0.1.0"
 edition = "2018"
 

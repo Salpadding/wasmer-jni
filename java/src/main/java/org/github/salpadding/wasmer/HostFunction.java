@@ -1,4 +1,4 @@
-package org.github.salpadding.tinywasm;
+package org.github.salpadding.wasmer;
 
 public interface HostFunction {
     long[] EMPTY = new long[0];
