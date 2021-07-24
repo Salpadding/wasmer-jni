@@ -1,14 +1,15 @@
+use std::any::Any;
+
 use alloc::borrow::ToOwned;
 use alloc::collections::BTreeMap;
+use alloc::rc::Rc;
 use alloc::string::*;
 use alloc::vec::*;
-use parity_wasm::elements::FuncBody;
-use parity_wasm::elements::FunctionType;
-use parity_wasm::elements::Instruction;
-use parity_wasm::elements::Local;
-use parity_wasm::elements::Module;
-use parity_wasm::elements::Type;
-use parity_wasm::elements::ValueType;
+
+use parity_wasm::elements::GlobalEntry;
+use parity_wasm::elements::{
+    External, FuncBody, FunctionType, GlobalType, Instruction, Local, Module, Type, ValueType,
+};
 
 // label size (2byte) | local size (2byte) | stack size (2byte) | function index (2byte)
 #[derive(Clone, Copy)]
@@ -71,8 +72,8 @@ impl LabelData {
         ((self.0 & STACK_PC_MASK) >> STACK_PC_SHIFTS) as u16
     }
 
-    fn label_pc(&self) -> u32 {
-        ((self.0 & LABEL_PC_MASK) >> LABEL_PC_SHIFTS) as u32
+    fn label_pc(&self) -> u16 {
+        ((self.0 & LABEL_PC_MASK) >> LABEL_PC_SHIFTS) as u16
     }
 
     fn arity(&self) -> bool {
@@ -113,39 +114,45 @@ impl Offset {
     }
 }
 
-type Body = Vec<Instruction>;
-
 pub struct WASMFunction {
     fn_type: FunctionType,
-    body: Vec<Instruction>,
+    body: Rc<Vec<Instruction>>,
     locals: Vec<Local>,
 }
 
-pub struct Memory{
+impl WASMFunction {
+    fn body(&self) -> Rc<Vec<Instruction>> {
+        self.body.clone()
+    }
+}
+
+pub struct Memory {
     data: Vec<u8>,
-	initial: u32,
-	maximum: Option<u32>,
+    initial: u32,
+    maximum: Option<u32>,
     max_pages: u32,
     pages: u32,
 }
 
 macro_rules! min {
-    ($x: expr, $y: expr) => {
-       {
-           if $x < $y { $x } else { $y }
-       } 
-    };
+    ($x: expr, $y: expr) => {{
+        if $x < $y {
+            $x
+        } else {
+            $y
+        }
+    }};
 }
 
 macro_rules! memory_load_n {
     ($fn: ident, $t: ident, $bytes: expr) => {
         fn $fn(&self, off: u32) -> Result<$t, String> {
-            if (off + $bytes) as usize > self.data.len()  {
-                return Err("memory access overflow".into())
+            if (off + $bytes) as usize > self.data.len() {
+                return Err("memory access overflow".into());
             }
-    
+
             let mut buf = [0u8; $bytes];
-            buf.copy_from_slice(&self.data[off as usize ..(off+$bytes) as usize]);
+            buf.copy_from_slice(&self.data[off as usize..(off + $bytes) as usize]);
             Ok($t::from_le_bytes(buf))
         }
     };
@@ -154,18 +161,18 @@ macro_rules! memory_load_n {
 macro_rules! memory_store_n {
     ($fn: ident, $t: ident, $bytes: expr) => {
         fn $fn(&mut self, off: u32, value: $t) -> Result<(), String> {
-            if (off + $bytes) as usize > self.data.len()  {
-                return Err("memory access overflow".into())
+            if (off + $bytes) as usize > self.data.len() {
+                return Err("memory access overflow".into());
             }
-    
+
             let buf = value.to_le_bytes();
-            self.data[off as usize..(off+$bytes) as usize].copy_from_slice(&buf);
+            self.data[off as usize..(off + $bytes) as usize].copy_from_slice(&buf);
             Ok(())
         }
     };
 }
 
-// validate: max_pages should <= 0xFFFF and not be 0 
+// validate: max_pages should <= 0xFFFF and not be 0
 const MAX_PAGES: u32 = 0xFFFF;
 const PAGE_SIZE: u32 = 64 * (1u32 << 10); // 64 KB
 
@@ -173,18 +180,18 @@ impl Memory {
     memory_load_n!(load_u64, u64, 8);
     memory_load_n!(load_u32, u32, 4);
     memory_load_n!(load_u16, u16, 2);
-    memory_load_n!(load_u8,  u8,  1);
+    memory_load_n!(load_u8, u8, 1);
 
-    memory_store_n!(store_u64, u64, 8);    
-    memory_store_n!(store_u32, u32, 4); 
-    memory_store_n!(store_u16, u16, 2);     
-    memory_store_n!(store_u8,  u8,  1);      
-    
+    memory_store_n!(store_u64, u64, 8);
+    memory_store_n!(store_u32, u32, 4);
+    memory_store_n!(store_u16, u16, 2);
+    memory_store_n!(store_u8, u8, 1);
+
     fn read(&self, off: usize, dst: &mut [u8]) -> Result<(), String> {
         if off + dst.len() > self.data.len() {
             return Err("Memory.read(): memory access overflow".into());
         }
-        dst.copy_from_slice(&self.data[off..off+dst.len()]);
+        dst.copy_from_slice(&self.data[off..off + dst.len()]);
         Ok(())
     }
 
@@ -192,11 +199,11 @@ impl Memory {
         if off + dst.len() > self.data.len() {
             return Err("Memory.write(): memory access overflow".into());
         }
-        self.data[off..off+dst.len()].copy_from_slice(dst);
+        self.data[off..off + dst.len()].copy_from_slice(dst);
         Ok(())
-    }    
+    }
 
-    fn grow(&mut self, n: u32) -> Result<u32, String>  {
+    fn grow(&mut self, n: u32) -> Result<u32, String> {
         match self.maximum {
             None => {}
             Some(max) => {
@@ -207,7 +214,10 @@ impl Memory {
         }
 
         if self.pages + n > self.max_pages {
-            return Err(format!("memory overflow: cannot grow any more, current pages = {} n = {} maximum = {}", self.pages, n, self.max_pages));
+            return Err(format!(
+                "memory overflow: cannot grow any more, current pages = {} n = {} maximum = {}",
+                self.pages, n, self.max_pages
+            ));
         }
 
         let mut v: Vec<u8> = vec![0; ((self.pages + n) * PAGE_SIZE) as usize];
@@ -223,27 +233,40 @@ impl WASMFunction {
     fn new(fn_type: FunctionType, body: FuncBody) -> WASMFunction {
         WASMFunction {
             fn_type: fn_type,
-            body: body.code().elements().to_owned(),
+            body: Rc::new(body.code().elements().to_owned()),
             locals: body.locals().to_owned(),
         }
     }
 }
 
-pub struct Instance<'a> {
-    md: &'a Module,
+pub struct HostFunction {
+    module: String,
+    field: String,
+    fn_type: FunctionType,
+}
+
+enum FunctionInstance {
+    HostFunction(HostFunction),
+    WasmFunction(Rc<WASMFunction>),
+}
+
+#[derive(Default)]
+pub struct Instance {
+    md: Option<Module>,
     // frames counter
     count: u16,
 
+    // limitation
     max_stacks: u32,
     max_frames: u16,
     max_labels: u32,
-    max_pages: usize, 
+    max_pages: usize,
 
+    // bitmaps
     stack_data: Vec<u64>,
     frame_data: Vec<FrameData>,
     label_data: Vec<LabelData>,
-    labels: Vec<&'a [Instruction]>,
-
+    labels: Vec<Rc<Vec<Instruction>>>,
     offsets: Vec<Offset>,
 
     // current frame
@@ -251,7 +274,7 @@ pub struct Instance<'a> {
     stack_size: u16,
     local_size: u16,
     func_index: u16,
-    frame_body: Body,
+    frame_body: Rc<Vec<Instruction>>,
 
     stack_base: u32,
     label_base: u32,
@@ -263,11 +286,20 @@ pub struct Instance<'a> {
     arity: bool,
     is_loop: bool,
     stack_pc: u16,
-    label_body: &'a [Instruction],
+    label_body: Rc<Vec<Instruction>>,
 
-    functions: Vec<WASMFunction>,
-    exports: BTreeMap<String, &'a WASMFunction>,
+    // static region
+    functions: Vec<FunctionInstance>,
+    exports: BTreeMap<String, Rc<WASMFunction>>,
     types: Vec<FunctionType>,
+    table: Vec<Option<FunctionInstance>>,
+
+    // runtime
+    globals: Vec<u64>,
+    global_types: Vec<GlobalType>,
+
+    // expr
+    expr: Rc<Vec<Instruction>>,
 }
 
 macro_rules! current_frame {
@@ -276,9 +308,31 @@ macro_rules! current_frame {
     }};
 }
 
-impl<'a> Instance<'a> {
-    fn init(&mut self) -> Result<(), String> {
-        self.types = match self.md.type_section() {
+pub struct StringErr(pub String);
+
+impl From<StringErr> for String {
+    fn from(e: StringErr) -> Self {
+        e.0
+    }
+}
+
+impl From<parity_wasm::elements::Error> for StringErr {
+    fn from(e: parity_wasm::elements::Error) -> Self {
+        StringErr(format!("{:?}", e))
+    }
+}
+
+impl Instance {
+    fn new(bin: &[u8]) -> Result<Instance, String> {
+        let mut r = Instance::default();
+        let md: Result<Module, StringErr> = Module::from_bytes(bin).map_err(|x| x.into());
+        r.init(md?)?;
+        Ok(r)
+    }
+
+    fn init(&mut self, md: Module) -> Result<(), String> {
+        // save type section
+        self.types = match md.type_section() {
             None => Vec::new(),
             Some(sec) => sec
                 .types()
@@ -290,26 +344,71 @@ impl<'a> Instance<'a> {
                 .collect(),
         };
 
-        let codes: Vec<FuncBody> = match self.md.code_section() {
-            None => Vec::new() ,
+        let codes: Vec<FuncBody> = match md.code_section() {
+            None => Vec::new(),
+            Some(sec) => sec.bodies().to_vec(),
+        };
+
+        match md.import_section() {
+            None => {}
             Some(sec) => {
-                sec.bodies().to_vec()
+                for imp in sec.entries().iter() {
+                    match imp.external() {
+                        External::Function(i) => {
+                            self.functions
+                                .push(FunctionInstance::HostFunction(HostFunction {
+                                    module: imp.module().into(),
+                                    field: imp.field().into(),
+                                    fn_type: self.types.get(*i as usize).ok_or("err")?.clone(),
+                                }))
+                        }
+                        _ => {
+                            return Err(format!("unsupported import type {:?}", imp.external()));
+                        }
+                    }
+                }
             }
         };
 
-        match self.md.function_section() {
+        match md.global_section() {
+            None => {}
+            Some(sec) => {
+                self.globals = vec![0u64; sec.entries().len()];
+                self.global_types = sec
+                    .entries()
+                    .iter()
+                    .map(|x| x.global_type().clone())
+                    .collect();
+
+                for i in 0..sec.entries().len() {
+                    let g = &sec.entries()[i];
+                    self.expr = Rc::new(g.init_expr().code().to_vec());
+                    self.globals[i] = self.execute_expr(g.global_type().content_type())?;
+                }
+            }
+        }
+
+        match md.function_section() {
             None => {}
             Some(sec) => {
                 if sec.entries().len() > FN_INDEX_MASK as usize {
-                    return Err(format!("function section overflow, too much functions {} > {}", sec.entries().len(), FN_INDEX_MASK));
+                    return Err(format!(
+                        "function section overflow, too much functions {} > {}",
+                        sec.entries().len(),
+                        FN_INDEX_MASK
+                    ));
                 }
                 for f in sec.entries().iter().map(|x| x.type_ref()) {
                     if f as usize > self.types.len() || f as usize > codes.len() {
                         return Err(format!("type entry or code entry not found func entry = {}, type entires = {}, code entries = {}", f, self.types.len(), codes.len()));
                     }
 
-                    let w = WASMFunction::new(self.types[f as usize].clone(), codes[f as usize].clone());
-                    self.functions.push(w)
+                    let w = WASMFunction::new(
+                        self.types[f as usize].clone(),
+                        codes[f as usize].clone(),
+                    );
+                    self.functions
+                        .push(FunctionInstance::WasmFunction(Rc::new(w)))
                 }
             }
         };
@@ -317,7 +416,55 @@ impl<'a> Instance<'a> {
         Ok(())
     }
 
-    fn store_current_frame(&mut self) {
+    fn execute(&mut self) -> Result<u64, String> {
+        self.push_label(self.result_type.is_some(), self.frame_body.clone(), false);
+
+        while self.label_size != 0 {
+            if self.label_pc as usize >= self.label_body.len() {
+                self.pop_label();
+                continue;
+            }
+
+            match self.label_body[self.label_pc as usize] {
+                Instruction::Return => {
+                    return self.ret();
+                },
+                Instruction::Nop | Instruction::I32ReinterpretF32 | Instruction::I64ReinterpretF64 | Instruction::I64ExtendUI32 => {},
+            }
+
+            self.label_pc += 1;
+        }
+
+        self.ret()
+    }
+
+    fn ret(&mut self) -> Result<u64, String>  {
+        match self.result_type {
+            None => {
+                self.pop_frame()?;
+                return Ok(0);
+            }
+            Some(t) => {
+                let mut res = self.pop()?;
+                match t {
+                    ValueType::F32 | ValueType::I32 => {
+                        res = res & (u32::MAX as u64);
+                    }
+                    _ => {}
+                };
+
+                self.pop_frame();
+                return Ok(res);
+            }
+        }
+    }
+
+    fn execute_expr(&mut self, value_type: ValueType) -> Result<u64, String> {
+        self.push_expr(self.expr.clone(), Some(value_type));
+        self.execute()
+    }
+
+    fn save_frame(&mut self) {
         let data = FrameData::new(
             self.label_size,
             self.local_size,
@@ -329,9 +476,9 @@ impl<'a> Instance<'a> {
         self.offsets[current_frame!(self)] = off;
     }
 
-    fn store_current_label(&mut self) {
+    fn save_label(&mut self) {
         let p = self.label_base + (self.label_size as u32) - 1;
-        self.labels[p as usize] = self.label_body;
+        self.labels[p as usize] = self.label_body.clone();
         let data = LabelData::new(self.stack_pc, self.label_pc, self.arity, self.is_loop);
         self.label_data[p as usize] = data;
     }
@@ -363,41 +510,168 @@ impl<'a> Instance<'a> {
     }
 
     #[inline]
-    fn clear_frame_data(&mut self) {
+    fn clear_frame(&mut self) {
         self.label_size = 0;
         self.stack_size = 0;
         self.func_index = 0;
         self.local_size = 0;
     }
+}
 
-    fn push_expr(&mut self, expr_body: Body, result_type: Option<ValueType>) -> Result<(), String> {
-        if self.count == self.max_frames {
+macro_rules! push_fr {
+    ($this: ident) => {
+        if $this.count == $this.max_frames {
             return Err("frame overflow".into());
         }
 
-        if self.count != 0 {
-            self.store_current_frame();
+        if $this.count != 0 {
+            $this.save_frame();
         }
 
-        if self.label_size != 0 {
-            self.store_current_label();
+        if $this.label_size != 0 {
+            $this.save_label();
         }
 
         let mut new_stack_base = 0;
         let mut new_label_base = 0;
 
-        if self.count != 0 {
-            new_stack_base = self.stack_base + (self.local_size as u32) + (self.stack_size as u32);
-            new_label_base = self.label_base + (self.label_size as u32);
+        if $this.count != 0 {
+            new_stack_base =
+                $this.stack_base + ($this.local_size as u32) + ($this.stack_size as u32);
+            new_label_base = $this.label_base + ($this.label_size as u32);
         }
 
-        self.clear_frame_data();
-        self.stack_base = new_stack_base;
-        self.label_base = new_label_base;
+        $this.stack_base = new_stack_base;
+        $this.label_base = new_label_base;
+        $this.clear_frame();
+    };
+}
+
+trait VecUtils {
+    type Item;
+
+    fn self_copy(&mut self, src: usize, dst: usize, len: usize);
+    fn fill_from(&mut self, src: usize, len: usize, elem: Self::Item);
+}
+
+impl<T> VecUtils for Vec<T>
+where
+    T: Sized + Copy,
+{
+    type Item = T;
+
+    fn self_copy(&mut self, src: usize, dst: usize, len: usize) {
+        for i in 0..len {
+            self[src + i] = self[dst + i];
+        }
+    }
+
+    fn fill_from(&mut self, src: usize, len: usize, elem: T) {
+        self[src..src + len].fill(elem);
+    }
+}
+
+impl Instance {
+    fn push_expr(
+        &mut self,
+        expr: Rc<Vec<Instruction>>,
+        result_type: Option<ValueType>,
+    ) -> Result<(), String> {
+        push_fr!(self);
+
         self.result_type = result_type;
-        self.frame_body = expr_body;
+        self.frame_body = expr;
         self.count += 1;
         Ok(())
+    }
+
+    fn push_frame(&mut self, func_index: u32, args: Option<Vec<u64>>) -> Result<(), String> {
+        push_fr!(self);
+
+        if func_index > u16::MAX as u32 {
+            return Err("function index overflow".into());
+        }
+
+        self.func_index = func_index as u16;
+        let func = self.get_func_by_bits(self.func_index)?;
+        let local_len = func.locals.len() + func.fn_type.params().len();
+        if local_len > u16::MAX as usize {
+            return Err(format!(
+                "push frame: function require too much locals {}",
+                local_len
+            ));
+        }
+
+        self.result_type = func.fn_type.results().get(0).map(|x| x.clone());
+        self.local_size = local_len as u16;
+        self.frame_body = func.body();
+        self.count += 1;
+
+        match args {
+            None => {
+                let c = current_frame!(self);
+                if c == 0 {
+                    return Err("unexpected empty frame".into());
+                }
+                self.push_args(func.fn_type.params().len())?;
+            }
+            Some(args) => {
+                self.stack_data
+                    .fill_from(self.stack_base as usize, local_len, 0);
+                self.stack_data[self.stack_base as usize..self.stack_base as usize + args.len()]
+                    .copy_from_slice(&args);
+            }
+        }
+
+        Ok(())
+    }
+
+    // pop n params from stack of prev frame into current frame
+    fn push_args(&mut self, params: usize) -> Result<(), String> {
+        let length = params as usize;
+        let frame = current_frame!(self) - 1;
+        let data = self.frame_data[frame];
+        let off = self.offsets[frame];
+        let stack_size = data.stack_size();
+        if (stack_size as usize) < length {
+            return Err("push_args: stack underflow".into());
+        }
+        let top = off.stack_base() as usize + data.local_size() as usize + stack_size as usize;
+        self.frame_data[frame] = FrameData::new(
+            data.label_size(),
+            data.local_size(),
+            stack_size - length as u16,
+            data.func_index(),
+        );
+
+        self.stack_data
+            .fill_from(self.stack_base as usize, self.local_size as usize, 0);
+        self.stack_data
+            .self_copy(top - params, self.stack_base as usize, params);
+        Ok(())
+    }
+
+    fn get_func_by_bits(&self, bits: u16) -> Result<Rc<WASMFunction>, String> {
+        let is_table = (bits & IS_TABLE_MASK) != 0;
+        let index = bits & FN_INDEX_MASK;
+
+        let o: Option<&FunctionInstance> = if is_table {
+            let o = self.table.get(index as usize);
+            match o {
+                None => None,
+                Some(x) => x.as_ref(),
+            }
+        } else {
+            self.functions.get(index as usize)
+        };
+
+        let f_re: Result<&FunctionInstance, String> =
+            o.ok_or("get_func_byt_bits: function index overflow".into());
+
+        match f_re? {
+            &FunctionInstance::WasmFunction(ref x) => Ok(x.clone()),
+            _ => Err("expect wasm function, while host function found".into()),
+        }
     }
 
     fn set_local(&mut self, index: u32, value: u64) -> Result<(), String> {
@@ -417,11 +691,11 @@ impl<'a> Instance<'a> {
         Ok(self.stack_data[(self.stack_base + index) as usize])
     }
 
-    fn pop_frame(&mut self) {
+    fn pop_frame(&mut self) -> Result<(), String> {
         self.count -= 1;
 
         if self.count == 0 {
-            return;
+            return Ok(());
         }
 
         let prev = self.frame_data[current_frame!(self)];
@@ -431,12 +705,89 @@ impl<'a> Instance<'a> {
         self.func_index = prev.func_index();
 
         let prev_off = self.offsets[current_frame!(self)];
+
         self.stack_base = prev_off.stack_base();
         self.label_base = prev_off.label_base();
+        self.reset_body(self.func_index)?;
+
+        if self.label_size != 0 {
+            self.load_label();
+        }
+
+        Ok(())
     }
 
     fn get_by_func_index(&mut self, func_index: u16) {
         let is_table = (func_index & IS_TABLE_MASK) != 0;
         let index = (func_index & FN_INDEX_MASK) as usize;
+    }
+
+    fn load_label(&mut self) {
+        let p = self.label_base + self.label_size as u32 - 1;
+        self.label_body = self.labels[p as usize].clone();
+        let data = self.label_data[p as usize];
+        self.label_pc = data.label_pc();
+        self.stack_pc = data.stack_pc();
+        self.arity = data.arity();
+        self.is_loop = data.is_loop();
+    }
+
+    fn reset_body(&mut self, func_bits: u16) -> Result<(), String> {
+        let fun = self.get_func_by_bits(func_bits)?;
+        self.frame_body = fun.body();
+        self.result_type = fun.fn_type.results().get(0).map(|x| x.clone());
+        Ok(())
+    }
+
+    fn push_label(
+        &mut self,
+        arity: bool,
+        body: Rc<Vec<Instruction>>,
+        is_loop: bool,
+    ) -> Result<(), String> {
+        if self.label_size != 0 {
+            self.save_label();
+        }
+
+        self.arity = arity;
+        self.is_loop = is_loop;
+        self.stack_pc = self.stack_size;
+        self.label_body = body;
+        self.label_pc = 0;
+
+        if self.label_base + self.label_size as u32 == self.max_labels {
+            return Err("push label failed: label size overflow".into());
+        }
+        self.label_size += 1;
+        Ok(())
+    }
+
+    fn pop_label(&mut self) -> Result<(), String> {
+        if self.label_size == 0 {
+            return Err("pop label failed: label underflow".into());
+        }
+
+        self.label_size -= 1;
+        if self.label_size != 0 {
+            self.load_label();
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{env, fs, fs::File, io::Read};
+
+    #[test]
+    fn test() {
+        let filename = "src/testdata/basic.wasm";
+        let mut f = File::open(filename).expect("no file found");
+        let metadata = fs::metadata(filename).expect("unable to read metadata");
+        let mut buffer = vec![0; metadata.len() as usize];
+        f.read(&mut buffer).expect("buffer overflow");
+
+        super::Instance::new(&buffer).unwrap();
     }
 }

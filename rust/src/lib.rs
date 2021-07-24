@@ -8,3 +8,10 @@ extern crate alloc;
 mod hex;
 mod stack;
 
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test() {
+
+    }
+}
