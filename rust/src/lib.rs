@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), no_std)]
 #![feature(unchecked_math)] // allow unchecked math 
 
 extern crate core;
