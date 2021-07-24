@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use alloc::borrow::ToOwned;
 use alloc::collections::BTreeMap;
 use alloc::rc::Rc;
 use alloc::string::*;
 use alloc::vec::*;
 
-use parity_wasm::elements::GlobalEntry;
+use parity_wasm::elements::BlockType;
 use parity_wasm::elements::{
     External, FuncBody, FunctionType, GlobalType, Instruction, Local, Module, Type, ValueType,
 };
@@ -247,7 +245,7 @@ pub struct HostFunction {
 
 enum FunctionInstance {
     HostFunction(HostFunction),
-    WasmFunction(Rc<WASMFunction>),
+    WasmFunction(WASMFunction),
 }
 
 #[derive(Default)]
@@ -289,7 +287,7 @@ pub struct Instance {
     label_body: Rc<Vec<Instruction>>,
 
     // static region
-    functions: Vec<FunctionInstance>,
+    functions: Rc<Vec<FunctionInstance>>,
     exports: BTreeMap<String, Rc<WASMFunction>>,
     types: Vec<FunctionType>,
     table: Vec<Option<FunctionInstance>>,
@@ -408,7 +406,7 @@ impl Instance {
                         codes[f as usize].clone(),
                     );
                     self.functions
-                        .push(FunctionInstance::WasmFunction(Rc::new(w)))
+                        .push(FunctionInstance::WasmFunction(w))
                 }
             }
         };
@@ -417,19 +415,89 @@ impl Instance {
     }
 
     fn execute(&mut self) -> Result<u64, String> {
-        self.push_label(self.result_type.is_some(), self.frame_body.clone(), false);
+        self.push_label(self.result_type.is_some(), self.frame_body.clone(), false)?;
 
         while self.label_size != 0 {
             if self.label_pc as usize >= self.label_body.len() {
-                self.pop_label();
+                self.pop_label()?;
                 continue;
             }
 
-            match self.label_body[self.label_pc as usize] {
+            let cloned = self.label_body.clone();
+            let ins = &cloned[self.label_pc as usize];
+
+            match ins {
                 Instruction::Return => {
                     return self.ret();
-                },
-                Instruction::Nop | Instruction::I32ReinterpretF32 | Instruction::I64ReinterpretF64 | Instruction::I64ExtendUI32 => {},
+                }
+                Instruction::Nop
+                | Instruction::I32ReinterpretF32
+                | Instruction::I64ReinterpretF64
+                | Instruction::I64ExtendUI32 => {}
+                Instruction::Block(t) => {
+                    self.push_label(t.to_value_type().is_some(), Rc::new(Vec::new()), false)?;
+                }
+                Instruction::Loop(_) => {
+                    self.push_label(false, Rc::new(Vec::new()), true)?;
+                }
+                Instruction::If(t) => {
+                    let arity = t.to_value_type().is_some();
+                    let c = self.pop()?;
+
+                    if c != 0 {
+                        self.push_label(arity, Rc::new(Vec::new()), false)?;
+                    }
+                }
+                Instruction::Br(n) => {
+                    self.branch(*n)?;
+                }
+                Instruction::BrIf(n) => {
+                    let m = *n;
+                    let c = self.pop()?;
+                    if c != 0 {
+                        self.branch(m)?;
+                    }
+                }
+                Instruction::BrTable(data) => {
+                    let tb = &data.table;
+                    let sz = data.table.len();
+                    let i = self.pop()? as u32;
+
+                    if sz == 0 {
+                        return Err("invalid empty br table data".into());
+                    }
+                    let n = if (i as usize) < sz - 1 {
+                        tb[i as usize]
+                    } else {
+                        tb[sz - 1]
+                    };
+                    self.branch(n)?;
+                }
+                Instruction::Drop => {
+                    self.pop()?;
+                }
+                Instruction::Call(n) => {
+                    let n = *n;
+                    match self.functions.get(n as usize) {
+                        None => return Err(format!("call failed, invalid function index {}", n)),
+                        Some(fun) => {
+                            match fun {
+                                FunctionInstance::HostFunction(_) => {
+                                    return Err("host function is not supported yet".into());
+                                },
+                                FunctionInstance::WasmFunction(w) => {
+                                    self.push_frame(n, None)?;
+                                    let res = self.execute()?;
+
+                                    if !w.fn_type.results().is_empty() {
+                                        self.push(res);
+                                    }
+                                },
+                            }
+                        }
+                    }
+                }
+                _ => return Err(format!("unsupported op {}", ins)),
             }
 
             self.label_pc += 1;
@@ -438,7 +506,7 @@ impl Instance {
         self.ret()
     }
 
-    fn ret(&mut self) -> Result<u64, String>  {
+    fn ret(&mut self) -> Result<u64, String> {
         match self.result_type {
             None => {
                 self.pop_frame()?;
@@ -453,15 +521,53 @@ impl Instance {
                     _ => {}
                 };
 
-                self.pop_frame();
+                self.pop_frame()?;
                 return Ok(res);
             }
         }
     }
 
     fn execute_expr(&mut self, value_type: ValueType) -> Result<u64, String> {
-        self.push_expr(self.expr.clone(), Some(value_type));
+        self.push_expr(self.expr.clone(), Some(value_type))?;
         self.execute()
+    }
+
+    fn branch(&mut self, l: u32) -> Result<(), String> {
+        if self.label_size == 0 || ((self.label_size - 1) as u32) < l {
+            return Err("branch failed: label underflow".into());
+        }
+
+        let idx = self.label_size as u32 - 1 - l;
+        self.label_size = idx as u16;
+
+        let p = self.label_base + self.label_size as u32;
+
+        if l != 0 {
+            let data: LabelData = self.label_data[p as usize];
+            self.is_loop = data.is_loop();
+            self.label_body = self.labels[p as usize].clone();
+            self.arity = data.arity();
+            self.stack_pc = data.stack_pc();
+        }
+
+        let val = if self.arity { self.pop()? } else { 0 };
+        self.stack_size = self.stack_pc;
+
+        if self.arity {
+            self.push(val)?;
+        }
+
+        if self.label_base + self.label_size as u32 == self.max_labels {
+            return Err("branch failed: label overflow".into());
+        }
+
+        self.label_size += 1;
+        self.label_pc = if self.is_loop {
+            0
+        } else {
+            self.label_body.len() as u16
+        };
+        Ok(())
     }
 
     fn save_frame(&mut self) {
@@ -571,6 +677,19 @@ where
     }
 }
 
+trait ToValueType {
+    fn to_value_type(&self) -> Option<ValueType>;
+}
+
+impl ToValueType for BlockType {
+    fn to_value_type(&self) -> Option<ValueType> {
+        match self {
+            BlockType::NoResult => None,
+            BlockType::Value(v) => Some(v.clone()),
+        }
+    }
+}
+
 impl Instance {
     fn push_expr(
         &mut self,
@@ -651,7 +770,7 @@ impl Instance {
         Ok(())
     }
 
-    fn get_func_by_bits(&self, bits: u16) -> Result<Rc<WASMFunction>, String> {
+    fn get_func_by_bits(&self, bits: u16) -> Result<WASMFunction, String> {
         let is_table = (bits & IS_TABLE_MASK) != 0;
         let index = bits & FN_INDEX_MASK;
 
@@ -669,7 +788,7 @@ impl Instance {
             o.ok_or("get_func_byt_bits: function index overflow".into());
 
         match f_re? {
-            &FunctionInstance::WasmFunction(ref x) => Ok(x.clone()),
+            &FunctionInstance::WasmFunction(x) => Ok(x),
             _ => Err("expect wasm function, while host function found".into()),
         }
     }

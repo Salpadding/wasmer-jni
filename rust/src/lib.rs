@@ -6,7 +6,7 @@ extern crate core;
 extern crate alloc;
 
 mod hex;
-mod stack;
+mod instance;
 
 #[cfg(test)]
 mod test {
