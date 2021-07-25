@@ -14,19 +14,18 @@ public class Natives {
     public static final List<Map<String, HostFunction>> HOSTS = new ArrayList<>(MAX_INSTANCES);
     public static final ReadWriteLock HOSTS_LOCK = new ReentrantReadWriteLock();
 
-
     static {
         for(int i = 0; i < MAX_INSTANCES; i++) {
             HOSTS.add(new HashMap<>());
         }
 
-        JNIUtil.loadLibrary("tiny_wasm");
+        JNIUtil.loadLibrary("wasmer_jni");
     }
 
     /**
      * create instance and get the descriptor
      */
-    public static native int createInstance(byte[] module, String[] hostFunctions);
+    public static native int createInstance(byte[] module, long features, String[] hostFunctions);
 
 
     /**

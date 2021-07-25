@@ -13,7 +13,7 @@ public class WasmTest {
 
         System.out.println("====");
         byte[] bin = TestUtil.readClassPathFile("bench/main.wasm");
-        int descriptor = Natives.createInstance(bin, null);
+        int descriptor = Natives.createInstance(bin, 0, null);
 
         long start = System.currentTimeMillis();
         for(int i = 0; i < LOOP; i++) {
