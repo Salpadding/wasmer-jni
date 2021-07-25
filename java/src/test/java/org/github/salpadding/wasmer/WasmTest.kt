@@ -14,10 +14,10 @@ class MemoryPeek: HostFunction {
         val off = args[0].toInt()
         val len = args[1].toInt()
 
-        val data = inst.getMemory(off, len)
+        val data = inst.getMemory().read(off, len)
         println(data.map { String.format("%02x", it) })
 
-        inst.setMemory(off, byteArrayOf(0, 0, 0, 1))
+        inst.getMemory().write(off, byteArrayOf(0, 0, 0, 1))
 
         return empty()
     }
