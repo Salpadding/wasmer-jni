@@ -4,3 +4,10 @@ Cargo.lock
 .idea
 build
 bin
+out
+*.dylib
+*.so
+*.dll
+.classpath
+.project
+.settings

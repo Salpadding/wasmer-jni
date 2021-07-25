@@ -307,6 +307,7 @@ macro_rules! current_frame {
     }};
 }
 
+#[derive(Debug)]
 pub struct StringErr(pub String);
 
 impl From<StringErr> for String {
