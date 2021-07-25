@@ -21,8 +21,19 @@ interface HostFunction {
         return EMPTY
     }
 
+    /**
+     * the name of host function
+     */
     val name: String
+
+    /**
+     * called by webAssembly vm
+     */
     fun execute(inst: Instance, args: LongArray): LongArray
+
+    /**
+     * function type, Pair.0 = parameters type, Pair.1 = return type
+     */
     val signature: Pair<List<ValType>, List<ValType>>
 
 

@@ -3,15 +3,36 @@ package org.github.salpadding.wasmer
 import java.lang.AutoCloseable
 import kotlin.concurrent.withLock
 
+/**
+ * Instance is not thread safe, dont share Instance object between threads
+ */
 interface Instance : AutoCloseable {
+    /**
+     * id of instance, works like file descriptor
+     */
     val id: Int
+
+    /**
+     * read memory from instance
+     */
     fun getMemory(off: Int, len: Int): ByteArray
+
+    /**
+     * write buf into memory
+     */
     fun setMemory(off: Int, buf: ByteArray)
+
+    /**
+     * execute exported function
+     */
     fun execute(export: String, args: LongArray = emptyLongs): LongArray
 
     companion object {
         val emptyLongs = LongArray(0)
 
+        /**
+         * create new instance by webassembly byte code, and open options
+         */
         @JvmStatic
         fun create(bin: ByteArray, options: Options, hosts: Collection<HostFunction>?): Instance {
             val names = hosts?.map { it.name }?.toTypedArray() ?: emptyArray()

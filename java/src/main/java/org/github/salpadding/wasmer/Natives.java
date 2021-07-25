@@ -9,7 +9,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class Natives {
     public static final int MAX_INSTANCES = 1024;
-    public static final int[] DESCRIPTORS = new int[MAX_INSTANCES];
     public static final InstanceImpl[] INSTANCES = new InstanceImpl[MAX_INSTANCES];
     public static final Map[] HOSTS = new Map[MAX_INSTANCES];
     static final Lock GLOBAL_LOCK = new ReentrantLock();
