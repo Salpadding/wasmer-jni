@@ -3,6 +3,11 @@ package org.github.salpadding.wasmer
 import java.lang.AutoCloseable
 import kotlin.concurrent.withLock
 
+interface Memory {
+    fun read(off: Int, len: Int): ByteArray
+    fun write(off: Int, buf: ByteArray)
+}
+
 /**
  * Instance is not thread safe, dont share Instance object between threads
  */
@@ -12,15 +17,8 @@ interface Instance : AutoCloseable {
      */
     val id: Int
 
-    /**
-     * read memory from instance
-     */
-    fun getMemory(off: Int, len: Int): ByteArray
+    fun getMemory(name: String = "memory"): Memory
 
-    /**
-     * write buf into memory
-     */
-    fun setMemory(off: Int, buf: ByteArray)
 
     /**
      * execute exported function
