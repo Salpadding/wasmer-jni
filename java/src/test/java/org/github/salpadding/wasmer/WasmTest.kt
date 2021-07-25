@@ -45,7 +45,7 @@ class WasmTest {
     fun test1() {
         val bin = TestUtil.readClassPathFile("testdata/wasm.wasm")
 
-        create(bin, InstanceOptions.empty(), listOf(EmptyHost("alert"), MemoryPeek())).use {
+        create(bin, Options.empty(), listOf(EmptyHost("alert"), MemoryPeek())).use {
             val start = System.currentTimeMillis()
             for (i in 0 until LOOP) {
                 it.execute("init", longArrayOf(Long.MAX_VALUE, Int.MAX_VALUE.toLong()))

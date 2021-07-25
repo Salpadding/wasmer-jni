@@ -13,7 +13,7 @@ interface Instance : AutoCloseable {
         val emptyLongs = LongArray(0)
 
         @JvmStatic
-        fun create(bin: ByteArray, options: InstanceOptions, hosts: Collection<HostFunction>?): Instance {
+        fun create(bin: ByteArray, options: Options, hosts: Collection<HostFunction>?): Instance {
             val names = hosts?.map { it.name }?.toTypedArray() ?: emptyArray()
             val m = hosts?.associate { Pair(it.name, it) }
 
