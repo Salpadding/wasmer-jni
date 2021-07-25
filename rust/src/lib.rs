@@ -456,7 +456,6 @@ fn set_memory(
     unsafe {
         let ins = get_ins_by_id!(descriptor as usize);
         let bytes = env.convert_byte_array(buf)?;
-
         let mem = ins.exports.get_memory("memory")?;
         if (off as usize + bytes.len()) as usize > mem.data_unchecked().len() {
             return Err(StringErr("memory access overflow".into()));

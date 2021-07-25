@@ -46,15 +46,11 @@ public class Natives {
      */
     static native long[] execute(int descriptor, String function, long[] args);
 
-    //    /**
-//     *  get memory from instance
-//     */
+
     public static native byte[] getMemory(int descriptor, int off, int length);
 
-//    /**
-//     *  set memory into instance
-//     */
-    public static native byte[] setMemory(int descriptor, int off, byte[] buf);
+
+    public static native void setMemory(int descriptor, int off, byte[] buf);
 
     public static native void close(int descriptor);
 

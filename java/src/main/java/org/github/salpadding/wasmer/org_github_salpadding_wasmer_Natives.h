@@ -25,6 +25,22 @@ JNIEXPORT jlongArray JNICALL Java_org_github_salpadding_wasmer_Natives_execute
 
 /*
  * Class:     org_github_salpadding_wasmer_Natives
+ * Method:    getMemory
+ * Signature: (III)[B
+ */
+JNIEXPORT jbyteArray JNICALL Java_org_github_salpadding_wasmer_Natives_getMemory
+  (JNIEnv *, jclass, jint, jint, jint);
+
+/*
+ * Class:     org_github_salpadding_wasmer_Natives
+ * Method:    setMemory
+ * Signature: (II[B)[B
+ */
+JNIEXPORT jbyteArray JNICALL Java_org_github_salpadding_wasmer_Natives_setMemory
+  (JNIEnv *, jclass, jint, jint, jbyteArray);
+
+/*
+ * Class:     org_github_salpadding_wasmer_Natives
  * Method:    close
  * Signature: (I)V
  */
