@@ -5,6 +5,9 @@ extern crate lazy_static;
 #[macro_use]
 extern crate wasmer;
 
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter, Write};
+use std::ops::Deref;
 use std::ptr::null_mut;
 use std::str::Utf8Error;
 use std::sync::PoisonError;
@@ -20,6 +23,7 @@ use jni::objects::{GlobalRef, JClass, JObject, JString, JValue, TypeArray};
 // We can't return one of the objects with lifetime information because the
 // lifetime checker won't let us.
 use jni::sys::{jbyteArray, jint, jlong, jlongArray, jobjectArray, jstring};
+use parity_wasm::SerializationError;
 use wasmer::{
     CompileError, ExportError, Exports, Features, Function, FunctionType, ImportObject, imports,
     Instance, InstantiationError, Module, RuntimeError, Store, Type, Value,
@@ -28,13 +32,9 @@ use wasmer_compiler_singlepass::Singlepass;
 use wasmer_engine_universal::Universal;
 
 use utils::{JNIUtil, ToVmType};
-use std::fmt::{Debug, Formatter, Display, Write};
-use std::ops::Deref;
-use std::error::Error;
 
-mod handlers;
+mod types;
 mod hex;
-mod instance;
 mod utils;
 
 const MAX_INSTANCES: usize = 1024;
@@ -154,8 +154,8 @@ mod features_enum {
 }
 
 macro_rules! set_mask {
-    ($mask: expr, $feature: expr, $opt: ident) => {
-        $feature.$opt($mask & features_enum::$opt != 0);
+    ($mask: expr, $feature: expr, $( $opt:ident ),*) => {
+        $($feature.$opt($mask & features_enum::$opt != 0);)*
     };
 }
 
@@ -193,7 +193,7 @@ macro_rules! u8_to_type {
 
 macro_rules! as_rt {
     ($x: expr) => {{
-        $x.map_err(|x| RuntimeError::new(x.to_err()))?
+        $x.map_err(|x| RuntimeError::new(format!("{:?}", x)))?
     }};
 }
 
@@ -251,15 +251,11 @@ fn create_instance(
                     let mut features = Features::new();
                     let mask = _features as u64;
 
-                    set_mask!(mask, features, threads);
-                    set_mask!(mask, features, reference_types);
-                    set_mask!(mask, features, simd);
-                    set_mask!(mask, features, bulk_memory);
-                    set_mask!(mask, features, multi_value);
-                    set_mask!(mask, features, tail_call);
-                    set_mask!(mask, features, module_linking);
-                    set_mask!(mask, features, multi_memory);
-                    set_mask!(mask, features, memory64);
+                    set_mask!(
+                        mask, features,
+                        threads, reference_types, simd, bulk_memory, multi_value,
+                        tail_call, module_linking, multi_memory, memory64
+                    );
 
                     // Create the store
                     let store = Store::new(&Universal::new(compiler).features(features).engine());
@@ -348,7 +344,7 @@ fn execute(
 
         let a = &sig.params().convert(a)?;
         let results = fun.call(&a)?;
-        let results = as_vec_i64!(results, StringErr("unsupported return type".into()));
+        let results = as_i64_vec!(results, StringErr("unsupported return type".into()));
 
         return env.slice_to_jlong_array(&results);
     }
@@ -408,31 +404,39 @@ mod test {
     fn test() {}
 }
 
+macro_rules! impl_from {
+    ($debug: ty) => {
+        impl From<$debug> for StringErr {
+            fn from(e: $debug) -> StringErr {
+                StringErr(format!("{:?}", e))
+            }
+        }
+    };
+}
+
+impl_from!(RuntimeError);
+impl_from!(jni::errors::Error);
+impl_from!(Utf8Error);
+impl_from!(SerializationError);
+impl_from!(ExportError);
+impl_from!(InstantiationError);
+impl_from!(CompileError);
+impl_from!(String);
+
 // Error handling utils
 pub struct StringErr(pub String);
 
-impl <T: Debug> From<T> for StringErr {
-    fn from(e: T) -> Self {
-        StringErr(format!("{:?}", e))
+impl StringErr {
+    fn new<T: Deref<Target=str>>(t: T) -> Self {
+        StringErr(t.to_string())
     }
 }
 
-trait ToErr {
-    fn to_err(&self) -> String;
-}
-
-impl <T: Debug> ToErr for T {
-    fn to_err(&self) -> String {
-        format!("{:?}", self)
+impl Debug for StringErr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self)
     }
 }
-
-impl ToErr for StringErr {
-    fn to_err(&self) -> String {
-        self.0.clone()
-    }
-}
-
 
 impl Deref for StringErr {
     type Target = str;

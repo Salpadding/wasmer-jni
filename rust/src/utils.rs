@@ -8,18 +8,18 @@ pub trait ToVmType {
 }
 
 
-impl <T: core::ops::Deref<Target = [Type]>> ToVmType for T {
+impl<T: core::ops::Deref<Target=[Type]>> ToVmType for T {
     fn convert(&self, src: Vec<i64>) -> Result<Vec<Val>, RuntimeError> {
         let mut r: Vec<Val> = Vec::new();
         for i in 0..src.len() {
-            let v = 
-            match self[i] {
-                Type::I32 => Value::I32(src[i] as u64 as u32 as i32),
-                Type::F32 => Value::F32(f32::from_bits(src[i] as u64 as u32)),
-                Type::I64 => Value::I64(src[i]),
-                Type::F64 => Value::F64(f64::from_bits(src[i] as u64)),
-                _ => return Err(RuntimeError::new("unexpected type"))
-            };
+            let v =
+                match self[i] {
+                    Type::I32 => Value::I32(src[i] as u64 as u32 as i32),
+                    Type::F32 => Value::F32(f32::from_bits(src[i] as u64 as u32)),
+                    Type::I64 => Value::I64(src[i]),
+                    Type::F64 => Value::F64(f64::from_bits(src[i] as u64)),
+                    _ => return Err(RuntimeError::new("unexpected type"))
+                };
 
             r.push(v);
         }
@@ -34,8 +34,8 @@ pub trait JNIUtil {
 
     fn slice_to_jlong_array(&self, arr: &[i64]) -> Result<jlongArray, StringErr>;
 
-    fn jstring_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<String>, StringErr> ;
-    
+    fn jstring_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<String>, StringErr>;
+
 
     fn jbytes_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<Vec<u8>>, StringErr>;
 }
@@ -47,18 +47,18 @@ impl JNIUtil for JNIEnv<'_> {
         }
 
         let arr = self.get_long_array_elements(arr, jni::objects::ReleaseMode::CopyBack)?;
-                    
-        let v: Vec<i64> = (0..arr.size()?).map(|i| unsafe { *arr.as_ptr().offset(i as isize) } ).collect();
+
+        let v: Vec<i64> = (0..arr.size()?).map(|i| unsafe { *arr.as_ptr().offset(i as isize) }).collect();
         Ok(v)
     }
 
     fn slice_to_jlong_array(&self, slice: &[i64]) -> Result<jlongArray, StringErr> {
         let o = self.new_long_array(slice.len() as i32)?;
-        self.set_long_array_region(o, 0, slice)?;        
+        self.set_long_array_region(o, 0, slice)?;
         Ok(o)
     }
 
-    fn jstring_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<String>, StringErr>  {
+    fn jstring_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<String>, StringErr> {
         if arr.is_null() {
             return Ok(Vec::new());
         }
@@ -93,8 +93,30 @@ impl JNIUtil for JNIEnv<'_> {
 
         Ok(v)
     }
+}
 
-    
+pub(crate) trait VecUtils {
+    type Item;
+
+    fn self_copy(&mut self, src: usize, dst: usize, len: usize);
+    fn fill_from(&mut self, src: usize, len: usize, elem: Self::Item);
+}
+
+impl<T> VecUtils for Vec<T>
+    where
+        T: Sized + Copy,
+{
+    type Item = T;
+
+    fn self_copy(&mut self, src: usize, dst: usize, len: usize) {
+        for i in 0..len {
+            self[src + i] = self[dst + i];
+        }
+    }
+
+    fn fill_from(&mut self, src: usize, len: usize, elem: T) {
+        self[src..src + len].fill(elem);
+    }
 }
 
 
