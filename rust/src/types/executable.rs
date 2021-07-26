@@ -57,12 +57,15 @@ impl Runnable for Instance {
             }
 
             let ins = &self.frame_body[self.label_pc as usize];
-            println!("{:?}", ins);
+
             self.label_pc += 1;
+
+            self.print_stack();
+            println!("{:?}", ins);
 
             unsafe { CNT += 1 };
 
-            if unsafe { CNT == 1000 } {
+            if unsafe { CNT == 200} {
                 return Err(StringErr::new("limited"));
             }
 
@@ -77,6 +80,7 @@ impl Runnable for Instance {
                 | Instruction::Else
                 => {}
                 Instruction::End => {
+                    println!("end=====");
                     self.pop_label()?;
                     continue;
                 },
@@ -222,104 +226,106 @@ impl Runnable for Instance {
                     let v = self.pop()?;
                     self.globals[n as usize] = v;
                 }
-                Instruction::I32Load(x, _) => {
+                Instruction::I32Load(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
-                    self.push(self.memory.load_u32(off)? as u64)?;
+                    let loaded = self.memory.load_u32(off)? as u64;
+                    println!("i32.load off = {} loaded = {}", off ,loaded);
+                    self.push(loaded)?;
                 }
-                Instruction::I64Load32U(x, _) => {
+                Instruction::I64Load32U(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u32(off)? as u64)?;
                 }
 
-                Instruction::I64Load(x, _) => {
+                Instruction::I64Load(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u64(off)?)?;
                 }
-                Instruction::I32Load8S(x, _) => {
+                Instruction::I32Load8S(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u8(off)? as i8 as i32 as u32 as u64)?;
                 }
-                Instruction::I64Load8S(x, _) => {
+                Instruction::I64Load8S(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u8(off)? as i8 as i64 as u64)?;
                 }
-                Instruction::I32Load8U(x, _) => {
+                Instruction::I32Load8U(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u8(off)? as u64)?;
                 }
-                Instruction::I64Load8U(x, _) => {
+                Instruction::I64Load8U(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u8(off)? as u64)?;
                 }
-                Instruction::I32Load16S(x, _) => {
+                Instruction::I32Load16S(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u16(off)? as i16 as i32 as u32 as u64)?;
                 }
-                Instruction::I64Load16S(x, _) => {
+                Instruction::I64Load16S(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u16(off)? as i16 as i64 as u64)?;
                 }
-                Instruction::I32Load16U(x, _) => {
+                Instruction::I32Load16U(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u16(off)? as u64)?;
                 }
-                Instruction::I64Load16U(x, _) => {
+                Instruction::I64Load16U(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u16(off)? as u64)?;
                 }
-                Instruction::I64Load32S(x, _) => {
+                Instruction::I64Load32S(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     self.push(self.memory.load_u32(off)? as i32 as i64 as u64)?;
                 }
-                Instruction::I32Store8(x, _) => {
+                Instruction::I32Store8(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     let v = self.pop()? as u8;
                     self.memory.store_u8(off, v)?;
                 }
-                Instruction::I64Store8(x, _) => {
+                Instruction::I64Store8(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     let v = self.pop()? as u8;
                     self.memory.store_u8(off, v)?;
                 }
-                Instruction::I32Store16(x, _) => {
+                Instruction::I32Store16(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     let v = self.pop()? as u16;
                     self.memory.store_u16(off, v)?;
                 }
-                Instruction::I64Store16(x, _) => {
+                Instruction::I64Store16(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     let v = self.pop()? as u16;
                     self.memory.store_u16(off, v)?;
                 }
-                Instruction::I32Store(x, _) => {
+                Instruction::I32Store(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     let v = self.pop()? as u32;
                     self.memory.store_u32(off, v)?;
                 }
-                Instruction::I64Store32(x, _) => {
+                Instruction::I64Store32(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     let v = self.pop()? as u32;
                     self.memory.store_u32(off, v)?;
                 }
-                Instruction::I64Store(x, _) => {
+                Instruction::I64Store(_, x) => {
                     let x = *x;
                     let off = mem_off!(self, x);
                     let v = self.pop()?;

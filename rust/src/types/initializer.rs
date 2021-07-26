@@ -132,6 +132,22 @@ impl InitFromModule for Instance {
             _ => {  }
         }
 
+        match md.data_section() {
+            Some(sec) => {
+                for seg in sec.entries() {
+                    let off: u64 = match seg.offset() {
+                        None => 0,
+                        Some(ex) => {
+                            self.expr = Rc::new(ex.code().to_vec());
+                            self.execute_expr(ValueType::I32)?.unwrap()
+                        }
+                    };
+                    self.memory.write(off as usize, seg.value());
+                }
+            }
+            _ => {}
+        }
+
         match md.start_section() {
             Some(i) => {
                 let start = get_or_err!(self.functions, i as usize, "start function not found");

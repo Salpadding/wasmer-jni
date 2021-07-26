@@ -187,7 +187,6 @@ impl Instance {
         if l != 0 {
             let data: LabelData = self.label_data[p as usize];
             self.is_loop = data.is_loop();
-            self.label_pc = data.label_pc();
             self.start_pc = data.start_pc();
             self.arity = data.arity();
             self.stack_pc = data.stack_pc();
@@ -206,7 +205,7 @@ impl Instance {
 
         self.label_size += 1;
         self.label_pc = if self.is_loop {
-            self.start_pc
+            self.start_pc - 1
         } else {
             u16::MAX
         };
@@ -227,7 +226,7 @@ impl Instance {
 
     fn save_label(&mut self) {
         let p = self.label_base + (self.label_size as u32) - 1;
-        let data = LabelData::new(self.stack_pc, self.start_pc, self.label_pc, self.arity, self.is_loop);
+        let data = LabelData::new(self.stack_pc, self.label_pc, self.start_pc, self.arity, self.is_loop);
         self.label_data[p as usize] = data;
     }
 
@@ -480,6 +479,46 @@ impl Instance {
         Ok(())
     }
 
+    pub(crate) fn print_stack(&self) {
+        let mut stack_base = self.stack_base + self.local_size as u32;
+        print!("stack = {}", '[');
+        for i in stack_base..stack_base+self.stack_size as u32{
+            print!("{}", self.stack_data[i as usize]);
+            print!("{}", ',');
+        }
+        print!("{}", "]\n");
+
+        stack_base = self.stack_base;
+        print!("local = {}", '[');
+        for i in stack_base..stack_base+self.local_size as u32{
+            print!("{}", self.stack_data[i as usize]);
+            print!("{}", ',');
+        }
+        print!("{}", "]\n");
+
+        let label_base = self.label_base;
+        print!("labels = {}", '[');
+        for i in label_base..label_base+self.label_size as u32 - 1{
+            let pc = self.label_data[i as usize].label_pc();
+            print!("{}", self.frame_body[pc as usize - 1]);
+
+            print!("{}", ',');
+        }
+        print!("{}", "]\n");
+
+        // print!("next = {}", '[');
+        // let mut i = 0;
+        //
+        // while self.label_pc + i < self.frame_body.len() as u16 && i < 16 {
+        //     print!("{}", self.frame_body[(self.label_pc + i) as usize]);
+        //     print!(",");
+        //     i += 1;
+        // }
+        //
+        // print!("{}", "]\n");
+
+    }
+
     pub(crate) fn push_label(
         &mut self,
         arity: bool,
@@ -503,7 +542,6 @@ impl Instance {
             return Err("push label failed: label size overflow".into());
         }
         self.label_size += 1;
-        println!("label size = {} after push label", self.label_size);
         Ok(())
     }
 
@@ -516,7 +554,7 @@ impl Instance {
             self.load_label();
         }
 
-        println!("label size = {} after pop label", self.label_size);
+        println!("pop label");
         Ok(())
     }
 }
