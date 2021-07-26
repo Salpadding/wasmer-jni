@@ -1,6 +1,9 @@
+use std::io;
+use std::io::Write;
 use std::rc::Rc;
 
 use parity_wasm::elements::Instruction;
+use wasmer::wasmparser::Operator::Else;
 
 use crate::StringErr;
 use crate::types::instance::{FunctionInstance, Instance, ToValueType, WASMFunction};
@@ -41,17 +44,27 @@ pub(crate) trait Runnable {
     fn run(&mut self) -> Result<Option<u64>, StringErr>;
 }
 
+static mut CNT: u64 = 0;
+
 impl Runnable for Instance {
     fn run(&mut self) -> Result<Option<u64>, StringErr> {
-        self.push_label(self.result_type.is_some(), self.frame_body.clone(), false)?;
+        self.push_label(self.result_type.is_some(), 0, 0, false)?;
 
         while self.label_size != 0 {
-            if self.label_pc as usize >= self.label_body.len() {
+            if self.label_pc as usize >= self.frame_body.len() {
                 self.pop_label()?;
                 continue;
             }
 
-            let ins = &self.label_body[self.label_pc as usize];
+            let ins = &self.frame_body[self.label_pc as usize];
+            println!("{:?}", ins);
+            self.label_pc += 1;
+
+            unsafe { CNT += 1 };
+
+            if unsafe { CNT == 1000 } {
+                return Err(StringErr::new("limited"));
+            }
 
             match ins {
                 Instruction::Return => {
@@ -61,20 +74,32 @@ impl Runnable for Instance {
                 | Instruction::I32ReinterpretF32
                 | Instruction::I64ReinterpretF64
                 | Instruction::I64ExtendUI32
-                | Instruction::End
+                | Instruction::Else
                 => {}
+                Instruction::End => {
+                    self.pop_label()?;
+                    continue;
+                },
                 Instruction::Block(t) => {
-                    self.push_label(t.to_value_type().is_some(), Rc::new(Vec::new()), false)?;
+                    self.push_label(t.to_value_type().is_some(), self.label_pc, self.label_pc, false)?;
                 }
                 Instruction::Loop(_) => {
-                    self.push_label(false, Rc::new(Vec::new()), true)?;
+                    self.push_label(false, self.label_pc, self.label_pc, true)?;
                 }
                 Instruction::If(t) => {
                     let arity = t.to_value_type().is_some();
+                    let mut else_pc = self.label_pc;
+
+                    while self.frame_body[else_pc as usize] != Instruction::Else {
+                        else_pc += 1;
+                    }
+
                     let c = self.pop()?;
 
                     if c != 0 {
-                        self.push_label(arity, Rc::new(Vec::new()), false)?;
+                        self.push_label(arity, self.label_pc, self.label_pc, false)?;
+                    } else {
+                        self.push_label(arity, else_pc, else_pc, false)?;
                     }
                 }
                 Instruction::Br(n) => {
@@ -190,7 +215,7 @@ impl Runnable for Instance {
                 }
                 Instruction::SetGlobal(n) => {
                     let t = get_or_err!(self.global_types, *n as usize, "access global overflow");
-                    if t.is_mutable() {
+                    if !t.is_mutable() {
                         return Err(StringErr::new("modify global failed: immutable"));
                     }
                     let n = *n;
@@ -578,7 +603,6 @@ impl Runnable for Instance {
                 }
                 _ => return Err(StringErr::new(format!("unsupported op {}", ins))),
             }
-            self.label_pc += 1;
         }
 
         self.ret()

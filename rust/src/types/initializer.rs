@@ -58,6 +58,7 @@ impl InitFromModule for Instance {
             }
         };
 
+
         match md.global_section() {
             None => {}
             Some(sec) => {
@@ -87,16 +88,18 @@ impl InitFromModule for Instance {
                     );
                     return Err(StringErr::new(msg));
                 }
-                for f in sec.entries().iter().map(|x| x.type_ref()) {
-                    if f as usize > self.types.len() || f as usize > codes.len() {
-                        let msg = format!("type entry or code entry not found func entry = {}, type entires = {}, code entries = {}", f, self.types.len(), codes.len());
+                for i in 0..sec.entries().len() {
+                    let t = sec.entries()[i].type_ref();
+                    if t as usize > self.types.len() || i as usize > codes.len() {
+                        let msg = format!("type entry or code entry not found func entry = {}, type entires = {}, code entries = {}", i, self.types.len(), codes.len());
                         return Err(StringErr::new(msg));
                     }
 
                     let w = WASMFunction::new(
-                        self.types[f as usize].clone(),
-                        codes[f as usize].clone(),
+                        self.types[t as usize].clone(),
+                        codes[i as usize].clone(),
                     );
+
                     self.functions
                         .push(FunctionInstance::WasmFunction(Rc::new(w)))
                 }
@@ -121,15 +124,12 @@ impl InitFromModule for Instance {
 
         match md.memory_section() {
             Some(sec) => {
-                if sec.entries().len() == 0 {
-                    return Err(StringErr::new("none memory section found"));
-                }
                 if sec.entries().len() > 1 {
                     return Err(StringErr::new("multi memory"));
                 }
                 self.memory.init(&sec.entries()[0].limits());
             }
-            _ => { return Err(StringErr::new("none memory section found")); }
+            _ => {  }
         }
 
         match md.start_section() {
@@ -153,8 +153,9 @@ impl InitFromModule for Instance {
                 for e in sec.entries() {
                     match e.internal() {
                         Internal::Function(i) => {
+                            let i = *i;
                             self.exports.insert(e.field().to_string(), {
-                                match get_or_err!(self.functions, *i as usize, "func not found") {
+                                match get_or_err!(self.functions, i as usize, "func not found") {
                                     FunctionInstance::WasmFunction(w) => {
                                         w.clone()
                                     }

@@ -18,6 +18,7 @@ use crate::utils::VecUtils;
 
 const MAX_SIGNED_INT: u64 = 0x7fffffff;
 
+#[derive(Debug)]
 pub(crate) struct WASMFunction {
     pub(crate) fn_type: FunctionType,
     body: Rc<Vec<Instruction>>,
@@ -28,6 +29,11 @@ impl WASMFunction {
     fn body(&self) -> Rc<Vec<Instruction>> {
         self.body.clone()
     }
+
+    pub(crate) fn local_len(&self) -> u32 {
+        self.locals.iter().map(|x| x.count()).sum()
+    }
+
 }
 
 
@@ -69,7 +75,6 @@ pub struct Instance {
     stack_data: Vec<u64>,
     frame_data: Vec<FrameData>,
     label_data: Vec<LabelData>,
-    labels: Vec<Rc<Vec<Instruction>>>,
     offsets: Vec<Offset>,
 
     // memory
@@ -87,12 +92,17 @@ pub struct Instance {
 
     pub(crate) result_type: Option<ValueType>,
 
+    pub(crate) start_pc: u16,
     // current label
     pub(crate) label_pc: u16,
+    // start pc of label
+    pub(crate) labels: Vec<u16>,
+
     arity: bool,
     is_loop: bool,
     stack_pc: u16,
-    pub(crate) label_body: Rc<Vec<Instruction>>,
+
+
 
     // static region
     pub(crate) functions: Vec<FunctionInstance>,
@@ -124,6 +134,7 @@ impl Instance {
         r.frame_data = vec![FrameData(0); r.max_frames as usize];
         r.stack_data = vec![0u64; r.max_stacks as usize];
         r.label_data = vec![LabelData(0); r.max_labels as usize];
+
         let md = Module::from_bytes(bin)?;
         r.init(md)?;
         Ok(r)
@@ -176,7 +187,8 @@ impl Instance {
         if l != 0 {
             let data: LabelData = self.label_data[p as usize];
             self.is_loop = data.is_loop();
-            self.label_body = self.labels[p as usize].clone();
+            self.label_pc = data.label_pc();
+            self.start_pc = data.start_pc();
             self.arity = data.arity();
             self.stack_pc = data.stack_pc();
         }
@@ -194,9 +206,9 @@ impl Instance {
 
         self.label_size += 1;
         self.label_pc = if self.is_loop {
-            0
+            self.start_pc
         } else {
-            self.label_body.len() as u16
+            u16::MAX
         };
         Ok(())
     }
@@ -215,8 +227,7 @@ impl Instance {
 
     fn save_label(&mut self) {
         let p = self.label_base + (self.label_size as u32) - 1;
-        self.labels[p as usize] = self.label_body.clone();
-        let data = LabelData::new(self.stack_pc, self.label_pc, self.arity, self.is_loop);
+        let data = LabelData::new(self.stack_pc, self.start_pc, self.label_pc, self.arity, self.is_loop);
         self.label_data[p as usize] = data;
     }
 
@@ -329,7 +340,8 @@ impl Instance {
     pub(crate) fn push_frame(&mut self, func: Rc<WASMFunction>, args: Option<Vec<u64>>) -> Result<(), StringErr> {
         push_fr!(self);
 
-        let local_len = func.locals.len() + func.fn_type.params().len();
+        let local_len = func.local_len() as usize + func.fn_type.params().len();
+
         if local_len > u16::MAX as usize {
             let msg = format!(
                 "push frame: function require too much locals {}",
@@ -453,9 +465,9 @@ impl Instance {
 
     fn load_label(&mut self) {
         let p = self.label_base + self.label_size as u32 - 1;
-        self.label_body = self.labels[p as usize].clone();
         let data = self.label_data[p as usize];
         self.label_pc = data.label_pc();
+        self.start_pc = data.start_pc();
         self.stack_pc = data.stack_pc();
         self.arity = data.arity();
         self.is_loop = data.is_loop();
@@ -471,23 +483,27 @@ impl Instance {
     pub(crate) fn push_label(
         &mut self,
         arity: bool,
-        body: Rc<Vec<Instruction>>,
+        start_pc: u16,
+        label_pc: u16,
         is_loop: bool,
     ) -> Result<(), String> {
         if self.label_size != 0 {
             self.save_label();
+            // since new label created, mark the start of new label
         }
+
+        self.start_pc = start_pc;
+        self.label_pc = label_pc;
 
         self.arity = arity;
         self.is_loop = is_loop;
         self.stack_pc = self.stack_size;
-        self.label_body = body;
-        self.label_pc = 0;
 
         if self.label_base + self.label_size as u32 == self.max_labels {
             return Err("push label failed: label size overflow".into());
         }
         self.label_size += 1;
+        println!("label size = {} after push label", self.label_size);
         Ok(())
     }
 
@@ -500,6 +516,7 @@ impl Instance {
             self.load_label();
         }
 
+        println!("label size = {} after pop label", self.label_size);
         Ok(())
     }
 }

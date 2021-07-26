@@ -23,6 +23,7 @@ pub mod executable;
 pub mod instance;
 mod table;
 mod initializer;
+mod ins_pool;
 
 
 #[cfg(test)]
