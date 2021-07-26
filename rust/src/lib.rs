@@ -5,39 +5,39 @@ extern crate lazy_static;
 #[macro_use]
 extern crate wasmer;
 
-use instance::StringErr;
-use utils::{JNIUtil, ToVmType};
+use std::ptr::null_mut;
+use std::str::Utf8Error;
+use std::sync::PoisonError;
+
+// This is the interface to the JVM that we'll
+// call the majority of our methods on.
+use jni::JNIEnv;
+// These objects are what you should use as arguments to your native function.
+// They carry extra lifetime information to prevent them escaping this context
+// and getting used after being GC'd.
+use jni::objects::{GlobalRef, JClass, JObject, JString, JValue, TypeArray};
+// This is just a pointer. We'll be returning it from our function.
+// We can't return one of the objects with lifetime information because the
+// lifetime checker won't let us.
+use jni::sys::{jbyteArray, jint, jlong, jlongArray, jobjectArray, jstring};
 use wasmer::{
-    imports, CompileError, ExportError, Exports, Features, Function, FunctionType, ImportObject,
+    CompileError, ExportError, Exports, Features, Function, FunctionType, ImportObject, imports,
     Instance, InstantiationError, Module, RuntimeError, Store, Type, Value,
 };
 use wasmer_compiler_singlepass::Singlepass;
 use wasmer_engine_universal::Universal;
+
+use utils::{JNIUtil, ToVmType};
+use std::fmt::{Debug, Formatter, Display, Write};
+use std::ops::Deref;
+use std::error::Error;
 
 mod handlers;
 mod hex;
 mod instance;
 mod utils;
 
-// This is the interface to the JVM that we'll
-// call the majority of our methods on.
-use jni::JNIEnv;
-
-// These objects are what you should use as arguments to your native function.
-// They carry extra lifetime information to prevent them escaping this context
-// and getting used after being GC'd.
-use jni::objects::{GlobalRef, JClass, JObject, JString, JValue, TypeArray};
-
-// This is just a pointer. We'll be returning it from our function.
-// We can't return one of the objects with lifetime information because the
-// lifetime checker won't let us.
-use jni::sys::{jbyteArray, jint, jlong, jlongArray, jobjectArray, jstring};
-use std::ptr::null_mut;
-use std::str::Utf8Error;
-
 const MAX_INSTANCES: usize = 1024;
-
-use std::sync::PoisonError;
 
 static mut INSTANCES: Vec<Option<Instance>> = vec![];
 
@@ -132,48 +132,6 @@ pub extern "system" fn Java_org_github_salpadding_wasmer_Natives_setMemory(
     jni_ret!(set_memory(env, _id, off, buf), env, ())
 }
 
-impl From<jni::errors::Error> for StringErr {
-    fn from(e: jni::errors::Error) -> Self {
-        StringErr(format!("{:?}", e))
-    }
-}
-
-impl<T> From<PoisonError<T>> for StringErr {
-    fn from(e: PoisonError<T>) -> Self {
-        StringErr("lock error".into())
-    }
-}
-
-impl From<Utf8Error> for StringErr {
-    fn from(e: Utf8Error) -> Self {
-        StringErr(format!("{:?}", e))
-    }
-}
-
-impl From<CompileError> for StringErr {
-    fn from(e: CompileError) -> Self {
-        StringErr(format!("{:?}", e))
-    }
-}
-
-impl From<InstantiationError> for StringErr {
-    fn from(e: InstantiationError) -> Self {
-        StringErr(format!("{:?}", e))
-    }
-}
-
-impl From<ExportError> for StringErr {
-    fn from(e: ExportError) -> Self {
-        StringErr(format!("{:?}", e))
-    }
-}
-
-impl From<RuntimeError> for StringErr {
-    fn from(e: RuntimeError) -> Self {
-        StringErr(format!("{:?}", e))
-    }
-}
-
 mod features_enum {
     /// Threads proposal should be enabled
     pub const threads: u64 = 1;
@@ -201,7 +159,7 @@ macro_rules! set_mask {
     };
 }
 
-macro_rules! as_vec_i64 {
+macro_rules! as_i64_vec {
     ($re: expr, $err: expr) => {{
         let mut v: Vec<i64> = Vec::new();
 
@@ -235,7 +193,7 @@ macro_rules! u8_to_type {
 
 macro_rules! as_rt {
     ($x: expr) => {{
-        $x.map_err(|x| RuntimeError::new(format!("{:?}", x)))?
+        $x.map_err(|x| RuntimeError::new(x.to_err()))?
     }};
 }
 
@@ -324,7 +282,7 @@ fn create_instance(
                                 let env = as_rt!(jvm.get_env());
                                 let jstr = as_rt!(env.new_string(name.clone()));
                                 let v =
-                                    as_vec_i64!(_args, RuntimeError::new("unexpected param type"));
+                                    as_i64_vec!(_args, RuntimeError::new("unexpected param type"));
 
                                 let arr = env.call_static_method(
                                     "org/github/salpadding/wasmer/Natives",
@@ -334,7 +292,7 @@ fn create_instance(
                                         JValue::Int(descriptor as i32),
                                         JValue::Object(jstr.into()),
                                         JValue::Object(
-                                            env.slice_to_jlong_array(&v).unwrap().into(),
+                                            as_rt!(env.slice_to_jlong_array(&v)).into(),
                                         ),
                                     ],
                                 );
@@ -448,4 +406,38 @@ fn set_memory(
 mod test {
     #[test]
     fn test() {}
+}
+
+// Error handling utils
+pub struct StringErr(pub String);
+
+impl <T: Debug> From<T> for StringErr {
+    fn from(e: T) -> Self {
+        StringErr(format!("{:?}", e))
+    }
+}
+
+trait ToErr {
+    fn to_err(&self) -> String;
+}
+
+impl <T: Debug> ToErr for T {
+    fn to_err(&self) -> String {
+        format!("{:?}", self)
+    }
+}
+
+impl ToErr for StringErr {
+    fn to_err(&self) -> String {
+        self.0.clone()
+    }
+}
+
+
+impl Deref for StringErr {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
