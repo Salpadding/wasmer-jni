@@ -4,6 +4,12 @@ macro_rules! get_or_err {
     };
 }
 
+macro_rules! ok_or_err {
+    ($v: expr, $msg: expr) => {
+        $v.ok_or::<String>($msg.into())?
+    };
+}
+
 macro_rules! opt_to_vec {
     ($op: expr) => {
         {
