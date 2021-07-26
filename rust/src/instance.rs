@@ -1,10 +1,12 @@
-use std::rc::Rc;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use parity_wasm::elements::{BlockType, ResizableLimits};
 use parity_wasm::elements::{
     External, FuncBody, FunctionType, GlobalType, Instruction, Local, Module, Type, ValueType,
 };
+
+use crate::StringErr;
 
 // label size (2byte) | local size (2byte) | stack size (2byte) | function index (2byte)
 #[derive(Clone, Copy)]
@@ -307,21 +309,6 @@ macro_rules! current_frame {
     }};
 }
 
-#[derive(Debug)]
-pub struct StringErr(pub String);
-
-impl From<StringErr> for String {
-    fn from(e: StringErr) -> Self {
-        e.0
-    }
-}
-
-impl From<parity_wasm::elements::Error> for StringErr {
-    fn from(e: parity_wasm::elements::Error) -> Self {
-        StringErr(format!("{:?}", e))
-    }
-}
-
 macro_rules! mem_off {
     ($this: ident, $var: expr) => {{
         let l = $this.pop()? + $var as u64;
@@ -361,10 +348,10 @@ macro_rules! v2_v1_ {
 }
 
 impl Instance {
-    fn new(bin: &[u8]) -> Result<Instance, String> {
+    fn new(bin: &[u8]) -> Result<Instance, StringErr> {
         let mut r = Instance::default();
-        let md: Result<Module, StringErr> = Module::from_bytes(bin).map_err(|x| x.into());
-        r.init(md?)?;
+        let md= Module::from_bytes(bin)?;
+        r.init(md).map_err(|x| StringErr(x))?;
         Ok(r)
     }
 
