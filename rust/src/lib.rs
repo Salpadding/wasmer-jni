@@ -1,4 +1,5 @@
 #![feature(unchecked_math)] // allow unchecked math
+#![allow(warnings)]
 
 #[macro_use]
 extern crate lazy_static;
