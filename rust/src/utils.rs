@@ -1,5 +1,3 @@
-use core::panic;
-
 use jni::{JNIEnv, sys::{jlongArray, jobjectArray}};
 use wasmer::{RuntimeError, Type, Val, Value};
 
@@ -10,7 +8,7 @@ pub trait ToVmType {
 }
 
 
-impl ToVmType for Vec<Type> {
+impl <T: core::ops::Deref<Target = [Type]>> ToVmType for T {
     fn convert(&self, src: Vec<i64>) -> Result<Vec<Val>, RuntimeError> {
         let mut r: Vec<Val> = Vec::new();
         for i in 0..src.len() {

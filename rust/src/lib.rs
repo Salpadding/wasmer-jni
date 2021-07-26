@@ -308,6 +308,7 @@ fn create_instance(
                     let bytes = env.convert_byte_array(_module)?;
                     let module = Module::new(&store, bytes)?;
 
+
                     let mut import_object = ImportObject::new();
                     let mut namespace = Exports::new();
 
@@ -346,7 +347,7 @@ fn create_instance(
 
                                 let v = env.jlong_array_to_vec(o.into_inner());
                                 let v = as_rt!(v);
-                                (&return_types).convert(v)
+                                return_types.convert(v)
                             });
                         namespace.insert(n2, host_function);
                     }
@@ -387,31 +388,8 @@ fn execute(
             return Err(StringErr("invalid params length".into()));
         }
 
-        let a = {
-            let mut v: Vec<Value> = Vec::new();
-
-            for i in 0..a.len() {
-                let t = sig.params()[i];
-                let j = a[i];
-
-                let k = match t {
-                    Type::I32 => Value::I32(j as i32),
-                    /// Signed 64 bit integer.
-                    Type::I64 => Value::I64(j),
-                    /// Floating point 32 bit integer.
-                    Type::F32 => Value::F32(f32::from_bits((j as i32) as u32)),
-                    /// Floating point 64 bit integer.
-                    Type::F64 => Value::F64(f64::from_bits(j as u64)),
-                    _ => return Err(StringErr("unsupoorted param type".into())),
-                };
-
-                v.push(k);
-            }
-
-            v
-        };
-
-        let results = fun.call(&a)?.to_vec();
+        let a = &sig.params().convert(a)?;
+        let results = fun.call(&a)?;
         let results = as_vec_i64!(results, StringErr("unsupported return type".into()));
 
         return env.slice_to_jlong_array(&results);
