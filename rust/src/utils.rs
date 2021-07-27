@@ -110,7 +110,7 @@ impl<T> VecUtils for Vec<T>
 
     fn self_copy(&mut self, src: usize, dst: usize, len: usize) {
         for i in 0..len {
-            self[src + i] = self[dst + i];
+            self[dst + i] = self[src + i];
         }
     }
 

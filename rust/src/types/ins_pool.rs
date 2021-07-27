@@ -75,7 +75,7 @@ impl <T: AsRef<[u8]>> ModuleCursor<u8> for Cursor<T>  {
 pub(crate) struct InsBits(u64);
 
 #[derive(Copy, Clone, Debug, Default)]
-pub(crate) struct InsVec(u64);
+pub(crate) struct InsVec(pub(crate) u64);
 
 impl InsVec {
     pub(crate) fn is_null(&self) -> bool {

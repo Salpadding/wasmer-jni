@@ -4,7 +4,7 @@ use parity_wasm::elements::{External, FuncBody, Internal, Module, Type, ValueTyp
 
 use crate::StringErr;
 use crate::types::executable::Runnable;
-use crate::types::frame_data::FN_INDEX_MASK;
+use crate::types::frame_data::{FN_INDEX_MASK, FuncBits};
 use crate::types::instance::{FunctionInstance, HostFunction, Instance, WASMFunction};
 use std::io::Cursor;
 use crate::types::ins_pool::InsVec;
@@ -93,8 +93,8 @@ impl InitFromModule for Instance {
 
                 for i in 0..sec.entries().len() {
                     let g = &sec.entries()[i];
-                    self.expr = read_expr!(self, g.init_expr().clone());
-                    self.globals[i] = self.execute_expr(g.global_type().content_type())?.unwrap();
+                    let expr = read_expr!(self, g.init_expr().clone());
+                    self.globals[i] = self.execute_expr(expr, g.global_type().content_type())?;
                 }
             }
         };
@@ -132,14 +132,16 @@ impl InitFromModule for Instance {
         match md.elements_section() {
             Some(sec) => {
                 for e in sec.entries() {
+
                     let off = match e.offset() {
                         Some(ex) => {
-                            self.expr = read_expr!(self, ex.clone());
-                            self.execute_expr(ValueType::I32)?
+                            let expr = read_expr!(self, ex.clone());
+                            self.execute_expr(expr, ValueType::I32)?
                         }
-                        _ => Some(0)
+                        _ => 0
                     };
-                    self.table.put_elements(off.unwrap() as usize, &[self.functions[e.index() as usize].clone()])
+                    let functions: Vec<FunctionInstance> = e.members().iter().map(|x| self.functions[*x as usize].clone()).collect();
+                    self.table.put_elements(off as usize, &functions);
                 }
             }
             _ => {}
@@ -161,8 +163,8 @@ impl InitFromModule for Instance {
                     let off: u64 = match seg.offset() {
                         None => 0,
                         Some(ex) => {
-                            self.expr = read_expr!(self, ex.clone());
-                            self.execute_expr(ValueType::I32)?.unwrap()
+                            let expr = read_expr!(self, ex.clone());
+                            self.execute_expr(expr, ValueType::I32)?
                         }
                     };
                     self.memory.write(off as usize, seg.value());
@@ -173,16 +175,8 @@ impl InitFromModule for Instance {
 
         match md.start_section() {
             Some(i) => {
-                let start = get_or_err!(self.functions, i as usize, "start function not found");
-                match start {
-                    FunctionInstance::HostFunction(_) => {
-                        return Err(StringErr::new("start function cannot be host"));
-                    }
-                    FunctionInstance::WasmFunction(w) => {
-                        self.push_frame(w.clone(), Some(Vec::new()));
-                        self.run();
-                    }
-                }
+                self.push_frame(FuncBits::normal(i as u16), Some(Vec::new()))?;
+                self.run()?;
             }
             _ => {}
         }
@@ -194,12 +188,7 @@ impl InitFromModule for Instance {
                         Internal::Function(i) => {
                             let i = *i;
                             self.exports.insert(e.field().to_string(), {
-                                match get_or_err!(self.functions, i as usize, "func not found") {
-                                    FunctionInstance::WasmFunction(w) => {
-                                        w.clone()
-                                    }
-                                    _ => return Err(StringErr::new("export shouldn't be host function"))
-                                }
+                                FuncBits::normal(i as u16)
                             });
                         }
                         _ => {}

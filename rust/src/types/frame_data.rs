@@ -3,11 +3,11 @@
 pub(crate) struct FrameData(pub(crate) u64);
 
 #[derive(Clone, Copy)]
-pub(crate) struct FunctionBits(pub(crate) u16);
+pub(crate) struct FuncBits(pub(crate) u16);
 
-impl Default for FunctionBits {
+impl Default for FuncBits {
     fn default() -> Self {
-        FunctionBits(0)
+        FuncBits(0)
     }
 }
 
@@ -15,13 +15,21 @@ impl Default for FunctionBits {
 pub(crate) const FN_INDEX_MASK: u16 = 0x7fff;
 const IS_TABLE_MASK: u16 = 0x8000;
 
-impl FunctionBits {
+impl FuncBits {
     pub(crate) fn is_table(&self) -> bool {
         self.0 & IS_TABLE_MASK != 0
     }
 
     pub(crate) fn fn_index(&self) -> u16 {
         self.0 & FN_INDEX_MASK
+    }
+
+    pub(crate) fn normal(n: u16) -> FuncBits{
+        FuncBits(n)
+    }
+
+    pub(crate) fn table(n: u16) -> FuncBits{
+        FuncBits(n | IS_TABLE_MASK)
     }
 }
 
@@ -48,11 +56,11 @@ impl FrameData {
         ((self.0 & STACK_SIZE_MASK) >> STACK_SIZE_SHIFTS) as u16
     }
 
-    pub(crate) fn func_bits(&self) -> FunctionBits {
-        FunctionBits(((self.0 & FUNCTION_BITS_MASK) >> FUNCTION_BITS_SHIFTS) as u16)
+    pub(crate) fn func_bits(&self) -> FuncBits {
+        FuncBits(((self.0 & FUNCTION_BITS_MASK) >> FUNCTION_BITS_SHIFTS) as u16)
     }
 
-    pub(crate) fn new(label_size: u16, local_size: u16, stack_size: u16, func_bits: FunctionBits) -> Self {
+    pub(crate) fn new(label_size: u16, local_size: u16, stack_size: u16, func_bits: FuncBits) -> Self {
         let n = ((label_size as u64) << LABEL_SIZE_SHIFTS)
             | ((local_size as u64) << LOCAL_SIZE_SHIFTS)
             | ((stack_size as u64) << STACK_SIZE_SHIFTS)

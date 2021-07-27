@@ -16,7 +16,7 @@ impl Table {
         for i in 0..functions.len() {
             let index = off + i;
 
-            if index > self.functions.len() {
+            if index >= self.functions.len() {
                 let mut new_vec = vec![None; max(self.functions.len() * 2, index + 1)];
                 for i in 0..self.functions.len() {
                     new_vec[i] = self.functions[i].clone()

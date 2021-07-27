@@ -8,6 +8,8 @@ use wasmer::wasmparser::Operator::Else;
 use parity_wasm::elements::opcodes;
 use crate::StringErr;
 use crate::types::instance::{FunctionInstance, Instance, ToValueType, WASMFunction};
+use crate::types::names;
+use crate::types::frame_data::FuncBits;
 
 macro_rules! v2_v1 {
     ($this: ident) => {
@@ -34,7 +36,7 @@ macro_rules! mem_off {
         let l = $this.pop()? + $ins.payload() as u64;
 
         if l > i32::MAX as u64 {
-            return Err(StringErr::new("memory access overflow"));
+            return Err(StringErr::new(format!("memory access overflow l > i32::MAX op = {}", names::name($ins.op_code()))));
         }
 
         l as u32
@@ -42,13 +44,18 @@ macro_rules! mem_off {
 }
 
 pub(crate) trait Runnable {
-    fn run(&mut self) -> Result<Option<u64>, StringErr>;
+    fn run(&mut self) -> Result<u64, StringErr>;
 }
 
+fn cnt() -> u64 {
+    unsafe { CNT }
+}
+
+#[cfg(test)]
 static mut CNT: u64 = 0;
 
 impl Runnable for Instance {
-    fn run(&mut self) -> Result<Option<u64>, StringErr> {
+    fn run(&mut self) -> Result<u64, StringErr> {
         self.push_label(self.result_type.is_some(), self.frame_body, false)?;
 
         while self.label_size != 0 {
@@ -59,26 +66,36 @@ impl Runnable for Instance {
 
             let ins = self.pool.ins_in_vec(self.label_body, self.label_pc as usize);
 
+            if ins.op_code() == opcodes::RETURN {
+                return self.ret();
+            }
+
             self.label_pc += 1;
 
-            self.print_stack();
-            println!("{:?}", ins);
+            // self.print_stack();
 
-            unsafe { CNT += 1 };
+            #[cfg(test)] {
+                unsafe { CNT += 1 };
+                // println!("count = {} code = {}", unsafe { CNT }, names::name(ins.op_code()));
 
-            if unsafe { CNT == 200} {
-                return Err(StringErr::new("limited"));
+                if unsafe { CNT % 10000 == 0} {
+                    println!("cnt = {}", unsafe { CNT } );
+                }
+
+                if unsafe { CNT == 98000000 } {
+                    return Err(StringErr::new("unexpected"))
+                }
             }
 
             match ins.op_code() {
-                opcodes::RETURN => {
-                    return Ok(self.ret()?);
-                }
                 opcodes::NOP
                 | opcodes::I32REINTERPRETF32
                 | opcodes::I64REINTERPRETF64
                 | opcodes::I64EXTENDUI32
                 => {}
+                opcodes::UNREACHABLE => {
+                    return Err(StringErr::new("wasm: unreachable()"));
+                }
                 opcodes::BLOCK => {
                     self.push_label(ins.block_type().is_some(), self.pool.branch0(ins),  false)?;
                 }
@@ -133,49 +150,20 @@ impl Runnable for Instance {
                 }
                 opcodes::CALL => {
                     let n = ins.payload();
-
-                    let f: Rc<WASMFunction> = {
-                        match self.functions.get(n as usize) {
-                            None => {
-                                let msg = format!("call failed, invalid function index {}", n);
-                                return Err(StringErr::new(msg));
-                            }
-                            Some(fun) => match fun {
-                                FunctionInstance::HostFunction(_) => {
-                                    return Err(StringErr::new("host function is not supported yet"));
-                                }
-                                FunctionInstance::WasmFunction(w) => w.clone(),
-                            },
-                        }
-                    };
-
-                    self.push_frame(f.clone(), None)?;
+                    self.push_frame(FuncBits::normal(n as u16), None)?;
+                    let arity = self.result_type.is_some();
                     let res = self.run()?;
-
-                    if !&f.fn_type.results().is_empty() {
-                        self.push(res.unwrap())?;
+                    if arity {
+                        self.push(res)?;
                     }
                 }
                 opcodes::CALLINDIRECT  => {
                     let index = self.pop()? as usize;
-
-                    let f = {
-                        match &self.table.functions[index] {
-                            None => return Err(StringErr::new("function not found in table")),
-                            Some(f) => match f {
-                                FunctionInstance::HostFunction(_) => {
-                                    return Err(StringErr::new("host function is not supported"));
-                                }
-                                FunctionInstance::WasmFunction(w) => w.clone(),
-                            },
-                        }
-                    };
-
-                    self.push_frame(f.clone(), None)?;
+                    self.push_frame(FuncBits::table(index as u16), None)?;
+                    let arity = self.result_type.is_some();
                     let r = self.run()?;
-
-                    if !f.fn_type.results().is_empty() {
-                        self.push(r.unwrap())?
+                    if arity {
+                        self.push(r)?
                     }
                 }
                 opcodes::SELECT => {
@@ -216,17 +204,11 @@ impl Runnable for Instance {
                     let v = self.pop()?;
                     self.globals[ins.payload() as usize] = v;
                 }
-                opcodes::I32LOAD => {
+                opcodes::I32LOAD | opcodes::I64LOAD32U => {
                     let off = mem_off!(self, ins);
                     let loaded = self.memory.load_u32(off)? as u64;
-                    println!("i32.load off = {} loaded = {}", off ,loaded);
                     self.push(loaded)?;
                 }
-                opcodes::I64LOAD32U => {
-                    let off = mem_off!(self, ins);
-                    self.push(self.memory.load_u32(off)? as u64)?;
-                }
-
                 opcodes::I64LOAD => {
                     let off = mem_off!(self, ins);
                     self.push(self.memory.load_u64(off)?)?;
@@ -239,11 +221,7 @@ impl Runnable for Instance {
                     let off = mem_off!(self, ins);
                     self.push(self.memory.load_u8(off)? as i8 as i64 as u64)?;
                 }
-                opcodes::I32LOAD8U => {
-                    let off = mem_off!(self, ins);
-                    self.push(self.memory.load_u8(off)? as u64)?;
-                }
-                opcodes::I64LOAD8U => {
+                opcodes::I32LOAD8U | opcodes::I64LOAD8U=> {
                     let off = mem_off!(self, ins);
                     self.push(self.memory.load_u8(off)? as u64)?;
                 }
@@ -253,13 +231,9 @@ impl Runnable for Instance {
                 }
                 opcodes::I64LOAD16S => {
                     let off = mem_off!(self, ins);
-                    self.push(self.memory.load_u16(off)? as i16 as i64 as u64)?;
+                    self.push(self.memory.load_u16(off)? as i64 as u64)?;
                 }
-                opcodes::I32LOAD16U => {
-                    let off = mem_off!(self, ins);
-                    self.push(self.memory.load_u16(off)? as u64)?;
-                }
-                opcodes::I64LOAD16U => {
+                opcodes::I32LOAD16U | opcodes::I64LOAD16U=> {
                     let off = mem_off!(self, ins);
                     self.push(self.memory.load_u16(off)? as u64)?;
                 }
@@ -267,39 +241,27 @@ impl Runnable for Instance {
                     let off = mem_off!(self, ins);
                     self.push(self.memory.load_u32(off)? as i32 as i64 as u64)?;
                 }
-                opcodes::I32STORE8 => {
-                    let off = mem_off!(self, ins);
+                opcodes::I32STORE8 | opcodes::I64STORE8 => {
                     let v = self.pop()? as u8;
+                    let off = mem_off!(self, ins);
                     self.memory.store_u8(off, v)?;
                 }
-                opcodes::I64STORE8 => {
-                    let off = mem_off!(self, ins);
-                    let v = self.pop()? as u8;
-                    self.memory.store_u8(off, v)?;
-                }
-                opcodes::I32STORE16 => {
-                    let off = mem_off!(self, ins);
+                opcodes::I32STORE16 |opcodes::I64STORE16 => {
                     let v = self.pop()? as u16;
+                    let off = mem_off!(self, ins);
                     self.memory.store_u16(off, v)?;
                 }
-                opcodes::I64STORE16 => {
-                    let off = mem_off!(self, ins);
-                    let v = self.pop()? as u16;
-                    self.memory.store_u16(off, v)?;
-                }
-                opcodes::I32STORE => {
-                    let off = mem_off!(self, ins);
+                opcodes::I32STORE | opcodes::I64STORE32 => {
                     let v = self.pop()? as u32;
-                    self.memory.store_u32(off, v)?;
-                }
-                opcodes::I64STORE32 => {
+                    if v > u16::max as u32{
+                        println!("i32store v = {}", v);
+                    }
                     let off = mem_off!(self, ins);
-                    let v = self.pop()? as u32;
                     self.memory.store_u32(off, v)?;
                 }
                 opcodes::I64STORE => {
-                    let off = mem_off!(self, ins);
                     let v = self.pop()?;
+                    let off = mem_off!(self, ins);
                     self.memory.store_u64(off, v)?;
                 }
                 opcodes::CURRENTMEMORY => {
@@ -309,6 +271,8 @@ impl Runnable for Instance {
                 opcodes::GROWMEMORY => {
                     let n = self.pop()?;
                     let grow_result = self.memory.grow(n as u32)?;
+                    println!("grow memory n = {}", n);
+
                     self.push(grow_result as u64)?;
                 }
                 opcodes::I32CONST => {
@@ -516,13 +480,13 @@ impl Runnable for Instance {
                     let (v2, v1) = v2_v1_!(self);
                     self.push((v1 << (v2 as u64)) as u64)?;
                 }
-                opcodes::I64SHRU => {
-                    let (v2, v1) = v2_v1_!(self);
-                    self.push(((v1 as u64) >> (v2 as u64)) as u64)?;
-                }
                 opcodes::I64SHRS => {
                     let (v2, v1) = v2_v1_!(self);
                     self.push((v1 >> (v2 as u64)) as u64)?;
+                }
+                opcodes::I64SHRU => {
+                    let (v2, v1) = v2_v1_!(self);
+                    self.push(((v1 as u64) >> (v2 as u64)) as u64)?;
                 }
                 opcodes::I64ROTL => {
                     let (v2, v1) = v2_v1_!(self);
@@ -532,13 +496,17 @@ impl Runnable for Instance {
                     let (v2, v1) = v2_v1_!(self);
                     self.push(v1.rotate_right(v2 as u32) as u64)?;
                 }
-                opcodes::I64LES => {
+                opcodes::I64EQ => {
                     let (v2, v1) = v2_v1_!(self);
-                    self.push((v1 <= v2) as u64)?;
+                    self.push((v1 == v2) as u64)?;
                 }
-                opcodes::I64LEU => {
+                opcodes::I64EQZ => {
+                    let v = self.pop()?;
+                    self.push((v == 0) as u64)?;
+                }
+                opcodes::I64NE => {
                     let (v2, v1) = v2_v1_!(self);
-                    self.push(((v1 as u64) <= (v2 as u64)) as u64)?;
+                    self.push((v1 != v2) as u64)?;
                 }
                 opcodes::I64LTS => {
                     let (v2, v1) = v2_v1_!(self);
@@ -556,6 +524,14 @@ impl Runnable for Instance {
                     let (v2, v1) = v2_v1_!(self);
                     self.push(((v1 as u64) > (v2 as u64)) as u64)?;
                 }
+                opcodes::I64LEU => {
+                    let (v2, v1) = v2_v1_!(self);
+                    self.push(((v1 as u64) <= (v2 as u64)) as u64)?;
+                }
+                opcodes::I64LES => {
+                    let (v2, v1) = v2_v1_!(self);
+                    self.push((v1 <= v2) as u64)?;
+                }
                 opcodes::I64GES => {
                     let (v2, v1) = v2_v1_!(self);
                     self.push((v1 >= v2) as u64)?;
@@ -564,17 +540,14 @@ impl Runnable for Instance {
                     let (v2, v1) = v2_v1_!(self);
                     self.push(((v1 as u64) >= (v2 as u64)) as u64)?;
                 }
-                opcodes::I64EQZ => {
-                    let v = self.pop()?;
-                    self.push((v == 0) as u64)?;
+                opcodes::I32WRAPI64 => {
+                    let n = self.pop()?;
+                    self.push(n as u32 as u64)?;
                 }
-                opcodes::I64EQ => {
-                    let (v2, v1) = v2_v1_!(self);
-                    self.push((v1 == v2) as u64)?;
-                }
-                opcodes::I64NE => {
-                    let (v2, v1) = v2_v1_!(self);
-                    self.push((v1 != v2) as u64)?;
+                opcodes::I64EXTENDSI32 => {
+                    let n = self.pop()? as u32 as i32;
+                    let m = n as i64;
+                    self.push(m as u64)?;
                 }
                 _ => return Err(StringErr::new(format!("unsupported op {}", ins.op_code()))),
             }

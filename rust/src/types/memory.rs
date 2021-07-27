@@ -25,7 +25,7 @@ macro_rules! memory_load_n {
     ($fn: ident, $t: ident, $bytes: expr) => {
         pub(crate) fn $fn(&self, off: u32) -> Result<$t, String> {
             if (off + $bytes) as usize > self.data.len() {
-                return Err("memory access overflow".into());
+                return Err(format!("memory access overflow off = {} buf len = {} data len = {}", off, $bytes, self.data.len()));
             }
 
             let mut buf = [0u8; $bytes];
@@ -39,7 +39,7 @@ macro_rules! memory_store_n {
     ($fn: ident, $t: ident, $bytes: expr) => {
         pub(crate) fn $fn(&mut self, off: u32, value: $t) -> Result<(), String> {
             if (off + $bytes) as usize > self.data.len() {
-                return Err("memory access overflow".into());
+                return Err(format!("memory access overflow off = {} buf len = {} data len = {}", off, $bytes, self.data.len()));
             }
 
             let buf = value.to_le_bytes();
@@ -66,17 +66,18 @@ impl Memory {
 
     pub(crate) fn init(&mut self, limits: &ResizableLimits) -> Result<(), StringErr> {
         self.initial = limits.initial();
-        if self.initial > MAX_PAGES {
+        if self.initial > MAX_PAGES || self.initial > self.max_pages {
             return Err(StringErr::new(format!("initial page too large: {}", self.initial)));
         }
         self.data = vec![0u8; (self.initial * PAGE_SIZE) as usize];
+        self.pages = self.initial;
         self.maximum = limits.maximum();
         Ok(())
     }
 
     pub fn read(&self, off: usize, dst: &mut [u8]) -> Result<(), String> {
         if off + dst.len() > self.data.len() {
-            return Err("Memory.read(): memory access overflow".into());
+            return Err(format!("Memory.read(): memory access overflow off = {} buf len = {} memory len = {}", off, dst.len(), self.data.len()));
         }
         dst.copy_from_slice(&self.data[off..off + dst.len()]);
         Ok(())
@@ -84,7 +85,7 @@ impl Memory {
 
     pub fn write(&mut self, off: usize, dst: &[u8]) -> Result<(), String> {
         if off + dst.len() > self.data.len() {
-            return Err("Memory.write(): memory access overflow".into());
+            return Err(format!("Memory.read(): memory access overflow off = {} buf len = {} memory len = {}", off, dst.len(), self.data.len()));
         }
         self.data[off..off + dst.len()].copy_from_slice(dst);
         Ok(())

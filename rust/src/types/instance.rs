@@ -8,7 +8,7 @@ use parity_wasm::elements::{
 
 use crate::StringErr;
 use crate::types::executable::Runnable;
-use crate::types::frame_data::{FrameData, FunctionBits};
+use crate::types::frame_data::{FrameData, FuncBits};
 use crate::types::initializer::InitFromModule;
 use crate::types::label_data::LabelData;
 use crate::types::memory::Memory;
@@ -74,7 +74,7 @@ pub struct Instance {
     pub(crate) label_size: u16,
     stack_size: u16,
     local_size: u16,
-    func_bits: FunctionBits,
+    func_bits: FuncBits,
 
     pub(crate) frame_body: InsVec,
     pub(crate) label_body: InsVec,
@@ -97,7 +97,7 @@ pub struct Instance {
 
     // static region
     pub(crate) functions: Vec<FunctionInstance>,
-    pub(crate) exports: BTreeMap<String, Rc<WASMFunction>>,
+    pub(crate) exports: BTreeMap<String, FuncBits>,
     pub(crate) types: Vec<FunctionType>,
     pub(crate) table: Table,
     table_limit: Option<ResizableLimits>,
@@ -105,9 +105,6 @@ pub struct Instance {
     // runtime
     pub(crate) globals: Vec<u64>,
     pub(crate) global_types: Vec<GlobalType>,
-
-    // expr
-    pub(crate) expr: InsVec,
 
     pub(crate) pool: InsPool,
 }
@@ -119,11 +116,12 @@ macro_rules! current_frame {
 }
 
 impl Instance {
-    pub fn new(bin: &[u8], max_frames: u16, max_stacks: u32, max_labels: u32) -> Result<Instance, StringErr> {
+    pub fn new(bin: &[u8], max_frames: u16, max_stacks: u32, max_labels: u32, max_pages: u32) -> Result<Instance, StringErr> {
         let mut r = Instance::default();
         r.max_frames = max_frames;
         r.max_stacks = max_stacks;
         r.max_labels = max_labels;
+        r.memory.max_pages = max_pages;
         r.offsets = vec![Offset::default(); r.max_frames as usize];
         r.frame_data = vec![FrameData(0); r.max_frames as usize];
         r.stack_data = vec![0u64; r.max_stacks as usize];
@@ -138,11 +136,11 @@ impl Instance {
     }
 
 
-    pub(crate) fn ret(&mut self) -> Result<Option<u64>, StringErr> {
+    pub(crate) fn ret(&mut self) -> Result<u64, StringErr> {
         match self.result_type {
             None => {
                 self.pop_frame()?;
-                Ok(None)
+                Ok(0)
             }
             Some(t) => {
                 let mut res = self.pop()?;
@@ -154,20 +152,20 @@ impl Instance {
                 };
 
                 self.pop_frame()?;
-                Ok(Some(res))
+                Ok(res)
             }
         }
     }
 
 
-    pub fn execute(&mut self, name: &str, args: &[u64]) -> Result<Vec<u64>, StringErr> {
+    pub fn execute(&mut self, name: &str, args: &[u64]) -> Result<u64, StringErr> {
         let fun = get_or_err!(self.exports, name, "function not found");
         self.push_frame(fun.clone(), Some(args.to_vec()));
-        Ok(opt_to_vec!(self.run()?))
+        Ok(self.run()?)
     }
 
-    pub(crate) fn execute_expr(&mut self, value_type: ValueType) -> Result<Option<u64>, StringErr> {
-        self.push_expr(self.expr, Some(value_type))?;
+    pub(crate) fn execute_expr(&mut self, expr: InsVec, value_type: ValueType) -> Result<u64, StringErr> {
+        self.push_expr(expr, Some(value_type))?;
         self.run()
     }
 
@@ -223,6 +221,7 @@ impl Instance {
 
     fn save_label(&mut self) {
         let p = self.label_base + (self.label_size as u32) - 1;
+        self.labels[p as usize] = self.label_body;
         let data = LabelData::new(self.stack_pc, self.label_pc,  self.arity, self.is_loop);
         self.label_data[p as usize] = data;
     }
@@ -264,15 +263,10 @@ impl Instance {
     }
 
     #[inline]
-    fn pop_i32(&mut self) -> Result<i32, String> {
-        Ok(self.pop()? as i32)
-    }
-
-    #[inline]
     fn clear_frame(&mut self) {
         self.label_size = 0;
         self.stack_size = 0;
-        self.func_bits = FunctionBits::default();
+        self.func_bits = FuncBits::default();
         self.local_size = 0;
     }
 }
@@ -333,9 +327,11 @@ impl Instance {
         Ok(())
     }
 
-    pub(crate) fn push_frame(&mut self, func: Rc<WASMFunction>, args: Option<Vec<u64>>) -> Result<(), StringErr> {
+    pub(crate) fn push_frame(&mut self, bits: FuncBits, args: Option<Vec<u64>>) -> Result<(), StringErr> {
         push_fr!(self);
 
+        self.func_bits = bits;
+        let func = self.func_by_bits(bits)?;
         let local_len = func.local_len() as usize + func.fn_type.params().len();
 
         if local_len > u16::MAX as usize {
@@ -353,10 +349,6 @@ impl Instance {
 
         match args {
             None => {
-                let c = current_frame!(self);
-                if c == 0 {
-                    return Err(StringErr::new("unexpected empty frame"));
-                }
                 self.push_args(func.fn_type.params().len())?;
             }
             Some(args) => {
@@ -395,7 +387,7 @@ impl Instance {
         Ok(())
     }
 
-    fn get_func_by_bits(&self, bits: FunctionBits) -> Result<Rc<WASMFunction>, String> {
+    fn func_by_bits(&self, bits: FuncBits) -> Result<Rc<WASMFunction>, String> {
         let o: Option<&FunctionInstance> = if bits.is_table() {
             let o = self.table.functions.get(bits.fn_index() as usize);
             match o {
@@ -407,7 +399,7 @@ impl Instance {
         };
 
         let f_re: Result<&FunctionInstance, String> =
-            o.ok_or("get_func_byt_bits: function index overflow".into());
+            o.ok_or("get_func_by_bits: function index overflow".into());
 
         match &f_re? {
             &FunctionInstance::WasmFunction(x) => Ok(x.clone()),
@@ -461,6 +453,7 @@ impl Instance {
 
     fn load_label(&mut self) {
         let p = self.label_base + self.label_size as u32 - 1;
+        self.label_body = self.labels[p as usize];
         let data = self.label_data[p as usize];
         self.label_pc = data.label_pc();
         self.stack_pc = data.stack_pc();
@@ -468,8 +461,8 @@ impl Instance {
         self.is_loop = data.is_loop();
     }
 
-    fn reset_body(&mut self, func_bits: FunctionBits) -> Result<(), String> {
-        let fun = self.get_func_by_bits(func_bits)?;
+    fn reset_body(&mut self, func_bits: FuncBits) -> Result<(), String> {
+        let fun = self.func_by_bits(func_bits)?;
         self.frame_body = fun.body();
         self.result_type = fun.fn_type.results().get(0).map(|x| x.clone());
         Ok(())
@@ -492,15 +485,13 @@ impl Instance {
         }
         print!("{}", "]\n");
 
-        // let label_base = self.label_base;
-        // print!("labels = {}", '[');
-        // for i in label_base..label_base+self.label_size as u32 - 1{
-        //     let pc = self.label_data[i as usize].label_pc();
-        //     print!("{}", self.frame_body[pc as usize - 1]);
-        //
-        //     print!("{}", ',');
-        // }
-        // print!("{}", "]\n");
+        let label_base = self.label_base;
+        print!("labels = {}", '[');
+        for i in label_base..label_base+self.label_size as u32 - 1{
+            print!("{}", self.labels[i as usize].0);
+            print!("{}", ',');
+        }
+        print!("{}", "]\n");
 
         // print!("next = {}", '[');
         // let mut i = 0;
@@ -526,7 +517,6 @@ impl Instance {
             // since new label created, mark the start of new label
         }
 
-
         self.arity = arity;
         self.is_loop = is_loop;
         self.stack_pc = self.stack_size;
@@ -549,7 +539,6 @@ impl Instance {
             self.load_label();
         }
 
-        println!("pop label");
         Ok(())
     }
 }
@@ -566,6 +555,6 @@ mod test {
         let mut buffer = vec![0; metadata.len() as usize];
         f.read(&mut buffer).expect("buffer overflow");
 
-        super::Instance::new(&buffer, 16000, 16000 * 16, 16000 * 16).unwrap();
+        super::Instance::new(&buffer, 16000, 16000 * 16, 16000 * 16, 64).unwrap();
     }
 }
