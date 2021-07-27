@@ -3,7 +3,7 @@ const STACK_BASE_SHIFTS: u32 = 0;
 const LABEL_BASE_MASK: u64 = 0x7fffffff00000000;
 const LABEL_BASE_SHIFTS: u32 = 32;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct Offset(u64);
 
 impl Offset {

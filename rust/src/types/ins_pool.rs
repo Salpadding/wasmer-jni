@@ -71,10 +71,10 @@ impl <T: AsRef<[u8]>> ModuleCursor<u8> for Cursor<T>  {
 // allocation for instruction branch and operands
 // 8 byte  operands offset | branch1 size (2byte) | branch0 size (2byte)
 // 8 byte  branch1 offset (4byte) | branch0 offset (4byte)
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Default)]
 pub(crate) struct InsBits(u64);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Default)]
 pub(crate) struct InsVec(u64);
 
 impl InsVec {
@@ -173,12 +173,13 @@ impl InsBits {
 }
 
 
-pub struct InsPool {
+#[derive(Default)]
+pub(crate) struct InsPool {
     data: Vec<u64>,
 }
 
 impl InsPool {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         // push a null pointer
         let mut r = InsPool { data: Vec::new() };
         r.data.push(NULL);
@@ -239,8 +240,8 @@ impl InsPool {
             Ok(InsVec::new(start as u32, cnt))
         }
     }
-    
-    fn operand(&self, ins: InsBits, i: usize) -> u64 {
+
+    pub(crate) fn operand(&self, ins: InsBits, i: usize) -> u64 {
         let off = ins.payload() as usize;
         self.data[off + i]
     }
@@ -388,18 +389,18 @@ impl InsPool {
         )
     }
 
-    fn ins_in_vec(&self, vec: InsVec, i: usize) -> InsBits {
+    pub(crate) fn ins_in_vec(&self, vec: InsVec, i: usize) -> InsBits {
         InsBits(self.data[vec.offset() + i])
     }
 
-    fn branch0(&self, ins: InsBits) -> InsVec {
+    pub(crate) fn branch0(&self, ins: InsBits) -> InsVec {
         let off = ins.payload();
-        InsVec(self.data[off])
+        InsVec(self.data[off as usize])
     }
 
-    fn branch1(&self, ins: InsBits) -> InsVec {
+    pub(crate) fn branch1(&self, ins: InsBits) -> InsVec {
         let off = ins.payload();
-        InsVec(self.data[off + 1])
+        InsVec(self.data[off as usize + 1])
     }
 
     fn read_num_ins(&mut self, cur: &mut Cursor<Vec<u8>>) -> Result<InsBits, StringErr> {
