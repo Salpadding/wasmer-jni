@@ -1,35 +1,62 @@
 use std::fs::OpenOptions;
 use std::io::{Cursor, Seek, SeekFrom};
 
-use parity_wasm::elements::{BlockType, Instruction, opcodes, ValueType, VarUint32, Deserialize};
+use parity_wasm::elements::{BlockType, Instruction, opcodes, ValueType, VarUint32, Deserialize, VarInt32, VarUint64, VarInt64};
 
 use crate::StringErr;
 use std::collections::BTreeSet;
 
-trait Peekable<T> {
-    fn peek(&self) -> Option<T>;
+macro_rules! trait_var {
+    ($t0: ident, $name: ident, $t1: ident) => {
+        fn $name(&mut self) -> Result<$t0, StringErr>;
+    };
+}
 
-    fn next(&mut self) -> Option<T>;
+macro_rules! impl_var {
+    ($t0: ident, $name: ident, $t1: ident) => {
+        fn $name(&mut self) -> Result<$t0, StringErr> {
+            let v = $t1::deserialize(self)?;
+            Ok(v.into())
+        }
+    };
+}
+
+trait Peekable<T> {
+    fn peek(&self) -> Result<T, StringErr>;
+
+    fn next(&mut self) ->  Result<T, StringErr>;
+
+    trait_var!(u32, var_u32, VarUint32);
+    trait_var!(i32, var_i32, VarInt32);
+    trait_var!(u64, var_u64, VarUint64);
+    trait_var!(i64, var_i64, VarInt64);
 }
 
 pub const NULL: u64 = 0xFFFFFFFFFFFFFFFFu64;
 
+
+
 impl <T: AsRef<[u8]>> Peekable<u8> for Cursor<T>  {
-    fn peek(&self) -> Option<u8> {
+    fn peek(&self) -> Result<u8, StringErr> {
         let cur = self.position();
         let r = self.get_ref().as_ref();
-        r.get(cur as usize).cloned()
+        r.get(cur as usize).cloned().ok_or(StringErr::new("unexpected eof"))
     }
 
-    fn next(&mut self) -> Option<u8> {
+    fn next(&mut self) -> Result<u8, StringErr> {
         let cur = self.position();
         let r = self.get_ref().as_ref();
         let r = r.get(cur as usize).cloned();
         if r.is_some() {
             self.seek(SeekFrom::Current(1)).unwrap();
         }
-        r
+        r.ok_or(StringErr::new("unexpected eof"))
     }
+
+    impl_var!(u32, var_u32, VarUint32);
+    impl_var!(i32, var_i32, VarInt32);
+    impl_var!(u64, var_u64, VarUint64);
+    impl_var!(i64, var_i64, VarInt64);
 }
 
 // allocation for runtime instruction
@@ -65,16 +92,19 @@ impl InsBits {
         ((self.0 & 0xFFFF0000u64) >> 16) as u16
     }
 
-    pub(crate) fn with_operand_size(&self, size: u16) -> Self {
+    pub(crate) fn add_operand_size(&self, size: u16) -> Self {
         let bits = (self.0 & !(0xFFFF0000u64)) | ((size as u64) << 16);
         InsBits(bits)
     }
 
-    pub(crate) fn operand(&self) -> u32 {
+    // 1. operand
+    // 2. offset of branch 0 or branch 1
+
+    pub(crate) fn payload(&self) -> u32 {
         ((self.0 & 0xFFFFFFFF00000000) >> 32) as u32
     }
 
-    pub(crate) fn with_operand(&self, operand: u32) -> Self {
+    pub(crate) fn add_payload(&self, operand: u32) -> Self {
         let bits = ((operand as u64 & 0xFFFFFFFFu64) << 32) | (self.0 & 0xFFFFFFFFu64);
         InsBits(bits)
     }
@@ -94,7 +124,7 @@ impl InsBits {
     }
 
 
-    pub(crate) fn with_block_type(&self, t: BlockType) -> Self {
+    pub(crate) fn add_block_type(&self, t: BlockType) -> Self {
         let r = match t {
             BlockType::NoResult => {
                 let bits = (self.0 & !(0xff00u64)) | 0x8000u64;
@@ -140,10 +170,9 @@ impl InsPool {
         r
     }
 
-    fn push_with_body_off(&mut self, ins: InsBits) -> InsBits {
+    fn add_body_off(&self, ins: InsBits) -> InsBits {
         let sz = self.data.len();
-        let r = ins.with_operand(sz as u32 + 1);
-        self.data.push(r.0);
+        let r = ins.add_payload(sz as u32);
         r
     }
 
@@ -184,63 +213,108 @@ impl InsPool {
     }
 
     fn push_labels(&mut self, cursor: &mut Cursor<Vec<u8>>) -> Result<u32, StringErr> {
-        let len: u32 = VarUint32::deserialize(cursor)?.into();
+        let len: u32 = cursor.var_u32()?;
 
         for i in 0..len {
-            let lb: u32 = VarUint32::deserialize(cursor)?.into();
+            let lb: u32 = cursor.var_u32()?;
             self.data.push(lb as u64);
         }
         Ok(len)
     }
 
 
+
     fn push_ctl(&mut self, cursor: &mut Cursor<Vec<u8>>) -> Result<InsBits, StringErr> {
-        let op: u8 = ok_or_err!(cursor.next(), "unexpected eof");
+        let op: u8 = cursor.next()?;
         let mut bits = InsBits::no_result(op);
-        match op {
+        return match op {
             opcodes::UNREACHABLE | opcodes::NOP | opcodes::RETURN => {
-                return Ok(bits);
+                Ok(bits)
             }
             opcodes::BR | opcodes::BRIF | opcodes::CALL => {
-                let n: u32 = VarUint32::deserialize(cursor)?.into();
-                bits = bits.with_operand(n).with_operand_size(1);
-                return Ok(bits);
+                let n: u32 = cursor.var_u32()?;
+                bits = bits.add_payload(n).add_operand_size(1);
+                Ok(bits)
             }
 
             opcodes::BLOCK | opcodes::LOOP | opcodes::IF => {
                 let t: BlockType = BlockType::deserialize(cursor)?;
-                bits = bits.with_block_type(t);
+                bits = bits.add_block_type(t);
                 let branch_0 = self.read_util(cursor, &[opcodes::END, opcodes::ELSE])?;
                 let mut branch_1 = InsVec(NULL);
 
-                if ok_or_err!(cursor.peek(), "unreachable") == opcodes::ELSE {
+                if cursor.peek()? == opcodes::ELSE {
                     // skip 0x05
-                    ok_or_err!(cursor.next(), "unreachable");
-                    branch_1 = self.read_util(cursor, &[opcodes::END, opcodes::ELSE])?;
+                    cursor.next()?;
+                    branch_1 = self.read_util(cursor, &[opcodes::END])?;
                 }
 
                 // skip 0x05
-                ok_or_err!(cursor.next(), "unreachable");
-                bits = self.push_with_body_off(bits);
+                cursor.next()?;
+                bits = self.add_body_off(bits);
                 self.data.push(branch_0.0);
                 self.data.push(branch_1.0);
-                return Ok(bits);
+                Ok(bits)
             }
             opcodes::BRTABLE => {
-                let ptr = self.data.len();
-                bits = self.push_with_body_off(bits);
+                bits = self.add_body_off(bits);
                 let operand_size = self.push_labels(cursor)?;
-                self.data.push({
-                    let x: u32 = VarUint32::deserialize(cursor)?.into();
-                    x as u64
-                });
-                bits = bits.with_operand_size((operand_size + 1) as u16);
-                self.data[ptr] = bits.0;
-                return Ok(bits)
+                self.data.push( cursor.var_u32()? as u64);
+                bits = bits.add_operand_size((operand_size + 1) as u16);
+                Ok(bits)
+            }
+            opcodes::CALLINDIRECT => {
+                let t = cursor.var_u32()?;
+                if cursor.next()? != 0 {
+                    Err(StringErr::new("invalid operand of call indirect"))
+                } else {
+                    bits = bits.add_operand_size(1).add_payload(t);
+                    Ok(bits)
+                }
             }
             _ => {
-                return Err(StringErr::new("unreachable"))
+                Err(StringErr::new("unreachable"))
             }
         }
     }
+
+    fn get_var_ins(&self, cur: &mut Cursor<Vec<u8>>) -> Result<InsBits, StringErr> {
+        let op = cur.next()?;
+        let bits = InsBits::no_result(op).add_payload(cur.var_u32()?);
+        Ok(bits)
+    }
+
+    fn get_mem_ins(&self, cur: &mut Cursor<Vec<u8>>) -> Result<InsBits, StringErr> {
+        let op = cur.next()?;
+        let bits = InsBits::no_result(op);
+
+        if op == opcodes::CURRENTMEMORY || op == opcodes::GROWMEMORY {
+            if cur.next()? != 0 {
+                return Err(StringErr::new("invalid terminator"));
+            }
+            return Ok(bits);
+        }
+
+        let align = cur.var_u32()?;
+        Ok(
+            bits.add_payload(cur.var_u32()?).add_operand_size(1)
+        )
+    }
+
+    // fn push_num_ins(&mut self, cur: &mut Cursor<Vec<u8>>) -> Result<InsBits, StringErr> {
+    //     let op = cur.next()?;
+    //     let bits = InsBits::no_result(op);
+    //     let bits =
+    //     match op {
+    //         opcodes::I32CONST => bits.add_payload(cur.var_u32()?).add_operand_size(1),
+    //         opcodes::I64CONST => {
+    //             bits = self.add_body_off(bits);
+    //
+    //             bits
+    //         }
+    //         _ => {
+    //             return Err(StringErr::new("unreachable"))
+    //         }
+    //     }
+    // }
 }
