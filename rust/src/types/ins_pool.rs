@@ -21,7 +21,7 @@ macro_rules! impl_var {
     };
 }
 
-trait Peekable<T> {
+trait ModuleCursor<T> {
     fn peek(&self) -> Result<T, StringErr>;
 
     fn next(&mut self) ->  Result<T, StringErr>;
@@ -36,7 +36,7 @@ pub const NULL: u64 = 0xFFFFFFFFFFFFFFFFu64;
 
 
 
-impl <T: AsRef<[u8]>> Peekable<u8> for Cursor<T>  {
+impl <T: AsRef<[u8]>> ModuleCursor<u8> for Cursor<T>  {
     fn peek(&self) -> Result<u8, StringErr> {
         let cur = self.position();
         let r = self.get_ref().as_ref();
