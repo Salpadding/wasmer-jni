@@ -6,6 +6,10 @@ extern crate lazy_static;
 #[macro_use]
 extern crate wasmer;
 
+#[cfg(test)]
+#[macro_use]
+extern crate serde;
+
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::Deref;

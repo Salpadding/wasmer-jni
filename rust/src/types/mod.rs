@@ -38,19 +38,34 @@ mod test {
     use std::fs::File;
     use std::io::Read;
 
+
     use crate::types::instance::Instance;
 
-    #[test]
-    fn test() {
-        let filename = "src/testdata/main.wasm";
-        let mut f = File::open(filename).expect("no file found");
-        let metadata = fs::metadata(filename).expect("unable to read metadata");
-        let mut buffer = vec![0; metadata.len() as usize];
-        f.read(&mut buffer).expect("buffer overflow");
-
-        let mut ins = Instance::new(&buffer, 16000, 16000 * 16, 16000 * 16, 64).unwrap();
-        ins.execute("bench", &[]).unwrap();
+    trait ToBits {
+        fn to_bits(&self) -> u64;
     }
+
+    impl ToBits for String {
+        fn to_bits(&self) -> u64 {
+            from_expect(&self)
+        }
+    }
+
+
+    #[derive(Serialize, Deserialize)]
+    struct TestFunction {
+        function: String,
+        r#return: String,
+        #[serde(default)]
+        args: Vec<String>
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct TestFile {
+        file: String,
+        tests: Vec<TestFunction>,
+    }
+
 
     fn read_file(path: &str) -> Vec<u8> {
         let mut f = File::open(path).expect("no file found");
@@ -71,12 +86,22 @@ mod test {
                 x.to_bits() as u64
             }
             "i32" => {
-                let x: i32 = v.parse().unwrap();
-                x as u32 as u64
+                if v.starts_with("-") {
+                    let x: i32 = v.parse().unwrap();
+                    x as u32 as u64
+                } else {
+                    let x: u32 = v.parse().unwrap();
+                    x as u64
+                }
             }
             "i64" => {
-                let x: i64 = v.parse().unwrap();
-                x as u64
+                if v.starts_with("-") {
+                    let x: i64 = v.parse().unwrap();
+                    x as u64
+                } else {
+                    let x: u64 = v.parse().unwrap();
+                    x
+                }
             }
             "f64" => {
                 let x: f64 = v.parse().unwrap();
@@ -86,39 +111,158 @@ mod test {
         }
     }
 
-    macro_rules! test_md {
-        ($test_fn: ident, $md: expr) => {
-            #[test]
-            fn $test_fn () {
-                let json_file = "src/testdata/modules.json";
-                let module_file = $md;
-
-
-                let json_str = String::from_utf8(read_file(json_file)).unwrap();
-                let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-                let obj = json.as_array().unwrap()
-                        .iter().find(|x| x.as_object().unwrap().get("file").unwrap().as_str().unwrap() == module_file).unwrap();
-
-                let tests = obj.get("tests").unwrap().as_array().unwrap();
-                let path = format!("src/testdata/{}", module_file);
-
-                let mut ins = Instance::new(&read_file(&path), 16000, 16000 * 16, 16000 * 16, 64).unwrap();
-
-                for test in tests {
-                    let func_name = test.as_object().unwrap().get("function").unwrap().as_str().unwrap();
-                    let expect = test.as_object().unwrap().get("return").unwrap().as_str().unwrap();
-                    let expect = from_expect(expect);
-                    assert_eq!(ins.execute(func_name, &[]).unwrap(), expect)
-                }
-                println!("test passed for module {}", $md);
-            }
-
-        };
+    fn test_no_spec(module_file: &'static str) {
+        test_wasm_file("src/testdata", "src/testdata/modules.json", module_file);
     }
 
-    test_md!(test_br, "br.wasm");
-    test_md!(test_bug_49, "bug-49.wasm");
-    test_md!(test_br_if, "brif.wasm");
-    test_md!(test_br_if_loop, "brif-loop.wasm");
-    test_md!(test_expr_block, "expr-block.wasm");
+    fn test_wasm_file(dir: &'static str, json_file: &'static str, module_file: &'static str) {
+        let json_str = String::from_utf8(read_file(json_file)).unwrap();
+        let json: Vec<TestFile> = serde_json::from_str(&json_str).unwrap();
+
+        let obj = json
+            .iter().find(|x| &x.file == module_file).unwrap();
+
+        let path = format!("{}/{}", dir, module_file);
+
+        let mut ins = Instance::new(&read_file(&path), 16000, 16000 * 16, 16000 * 16, 64).unwrap();
+
+        for test in &obj.tests {
+            let args: Vec<u64> = test.args.iter().map(|x| x.to_bits()).collect();
+            assert_eq!(
+                ins.execute(&test.function, &args).unwrap(),
+                test.r#return.to_bits(),
+                "test failed for file: {} func: {}", &obj.file, &test.function
+            )
+        }
+    }
+
+    #[test]
+    fn test_basic(){
+        test_no_spec("basic.wasm");
+    }
+
+    #[test]
+    fn test_binary(){
+        test_no_spec("binary.wasm");
+    }
+
+    #[test]
+    fn test_brif_loop(){
+        test_no_spec("brif-loop.wasm");
+    }
+
+    #[test]
+    fn test_brif(){
+        test_no_spec("brif.wasm");
+    }
+
+    #[test]
+    fn test_br(){
+        test_no_spec("br.wasm");
+    }
+
+    #[test]
+    fn test_call(){
+        test_no_spec("call.wasm");
+    }
+
+    #[test]
+    fn test_call_zero_args(){
+        test_no_spec("call-zero-args.wasm");
+    }
+
+    #[test]
+    fn test_call_indirect(){
+        test_no_spec("callindirect.wasm");
+    }
+
+    #[test]
+    fn test_cast(){
+        test_no_spec("cast.wasm");
+    }
+
+    #[test]
+    fn test_compare(){
+        test_no_spec("compare.wasm");
+    }
+
+    #[test]
+    fn test_convert(){
+        test_no_spec("convert.wasm");
+    }
+
+    #[test]
+    fn test_expr_block(){
+        test_no_spec("expr-block.wasm");
+    }
+
+    #[test]
+    fn test_expr_brif(){
+        test_no_spec("expr-brif.wasm");
+    }
+
+    #[test]
+    fn test_expr_br(){
+        test_no_spec("expr-br.wasm");
+    }
+
+    #[test]
+    fn test_expr_if(){
+        test_no_spec("expr-if.wasm");
+    }
+
+    #[test]
+    fn test_if(){
+        test_no_spec("if.wasm");
+    }
+
+    #[test]
+    fn test_load(){
+        test_no_spec("load.wasm");
+    }
+
+    #[test]
+    fn test_loop(){
+        test_no_spec("loop.wasm");
+    }
+
+    #[test]
+    fn test_nested_if(){
+        test_no_spec("nested-if.wasm");
+    }
+
+    #[test]
+    fn test_return(){
+        test_no_spec("return.wasm");
+    }
+
+    #[test]
+    fn test_select(){
+        test_no_spec("select.wasm");
+    }
+
+    #[test]
+    fn test_start(){
+        test_no_spec("start.wasm");
+    }
+
+    #[test]
+    fn test_store(){
+        test_no_spec("store.wasm");
+    }
+
+    #[test]
+    fn test_unary(){
+        test_no_spec("unary.wasm");
+    }
+
+    #[test]
+    fn test_bug_49(){
+        test_no_spec("bug-49.wasm");
+    }
+
+    #[test]
+    fn test_rs_basic(){
+        test_no_spec("rust-basic.wasm");
+    }
 }

@@ -115,4 +115,8 @@ impl Memory {
         self.pages += n;
         Ok(prev)
     }
+
+    pub(crate) fn clear(&mut self) {
+        self.data.fill(0);
+    }
 }

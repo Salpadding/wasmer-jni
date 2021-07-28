@@ -226,6 +226,32 @@ impl Instance {
         self.label_data[p as usize] = data;
     }
 
+    pub(crate) fn top(&mut self) -> Result<&mut u64, StringErr> {
+        if self.stack_size == 0 {
+            return Err(StringErr::new("stack underflow"));
+        }
+        let base = self.stack_base + (self.local_size as u32);
+        let index = (base + (self.stack_size as u32)) as usize;
+        Ok(&mut self.stack_data[index - 1])
+    }
+
+    pub(crate) fn top_2(&mut self) -> Result<(u64, &mut u64), StringErr> {
+        if self.stack_size < 2 {
+            return Err(StringErr::new("stack underflow"));
+        }
+        let base = self.stack_base + (self.local_size as u32);
+        let index = (base + (self.stack_size as u32)) as usize;
+        let r: (u64, &mut u64) = unsafe {
+            (
+                self.stack_data[index - 1],
+                &mut self.stack_data[index - 2],
+            )
+        };
+
+        Ok(r)
+    }
+
+
     pub(crate) fn push(&mut self, value: u64) -> Result<(), String> {
         let base = self.stack_base + (self.local_size as u32);
         let index = (base + (self.stack_size as u32)) as usize;
@@ -260,6 +286,20 @@ impl Instance {
         let v = self.stack_data[(base + (self.stack_size as u32) - 1) as usize];
         self.stack_size -= 1;
         Ok(v)
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.stack_data.fill(0);
+        self.count = 0;
+        self.label_data.fill(LabelData(0));
+        self.frame_data.fill(FrameData(0));
+        self.memory.clear();
+        self.func_bits = FuncBits(0);
+        self.arity = false;
+        self.frame_body = InsVec::null();
+        self.labels.fill(InsVec::null());
+        self.clear_frame();
+        self.label_body = InsVec::null();
     }
 
     #[inline]
@@ -546,15 +586,29 @@ impl Instance {
 #[cfg(test)]
 mod test {
     use std::{env, fs, fs::File, io::Read};
+    use std::time::SystemTime;
 
     #[test]
     fn test() {
-        let filename = "src/testdata/basic.wasm";
+        let filename = "src/testdata/main.wasm";
         let mut f = File::open(filename).expect("no file found");
         let metadata = fs::metadata(filename).expect("unable to read metadata");
         let mut buffer = vec![0; metadata.len() as usize];
         f.read(&mut buffer).expect("buffer overflow");
 
-        super::Instance::new(&buffer, 16000, 16000 * 16, 16000 * 16, 64).unwrap();
+        let mut ins = super::Instance::new(&buffer, 16000, 16000 * 16, 16000 * 16, 64).unwrap();
+
+        let loops = 5;
+
+        let start = SystemTime::now();
+
+        for _ in 0..loops {
+            ins.execute("bench", &[]).unwrap();
+            ins.clear();
+        }
+
+        let end = SystemTime::now();
+        let dur = end.duration_since(start);
+        println!("ops = {}", (loops as f64) * 1000.0 / (dur.unwrap().as_millis() as f64))
     }
 }
