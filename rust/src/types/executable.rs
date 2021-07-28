@@ -220,21 +220,6 @@ impl Runnable for Instance {
             }
 
             self.label_pc = pc + 1;
-
-            // self.print_stack();
-
-            #[cfg(test)] {
-                unsafe { CNT += 1 };
-                // println!("count = {} code = {}", unsafe { CNT }, names::name(ins.op_code()));
-
-                // if unsafe { CNT % 10000 == 0 } {
-                //     println!("cnt = {}", unsafe { CNT });
-                // }
-
-                if unsafe { CNT == 98000000 } {
-                    return Err(StringErr::new("unexpected"));
-                }
-            }
             self.invoke(ins)?;
         }
         self.ret()

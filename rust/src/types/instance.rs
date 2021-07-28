@@ -598,7 +598,7 @@ mod test {
 
         let mut ins = super::Instance::new(&buffer, 16000, 16000 * 16, 16000 * 16, 64).unwrap();
 
-        let loops = 5;
+        let loops = 1;
 
         let start = SystemTime::now();
 

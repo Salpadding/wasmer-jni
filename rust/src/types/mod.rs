@@ -1,6 +1,9 @@
 macro_rules! get_or_err {
     ($v: expr, $id: expr, $msg: expr) => {
-        $v.get($id).ok_or::<String>($msg.into())?
+        match $v.get($id) {
+            None => return Err(StringErr::new($msg)),
+            Some(o) => o
+        }
     };
 }
 
