@@ -33,6 +33,7 @@ use wasmer_compiler_singlepass::Singlepass;
 use wasmer_engine_universal::Universal;
 
 use utils::{JNIUtil, ToVmType};
+use wasmer::wasmparser::Operator;
 
 mod types;
 mod hex;

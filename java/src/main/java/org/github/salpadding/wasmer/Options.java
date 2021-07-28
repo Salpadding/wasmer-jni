@@ -1,5 +1,13 @@
 package org.github.salpadding.wasmer;
 
+/**
+ * TODO:
+ * add options for blockchain application: 
+ * 1. gas metering & gas limit, limit memory page
+ * 2. disallow start section
+ * 3. force memory with name = memory export
+ * 4. disallow global/memory/table import
+ */
 public class Options {
     private long threads;
     private long referenceTypes;
