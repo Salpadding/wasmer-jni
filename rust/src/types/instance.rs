@@ -10,12 +10,12 @@ use crate::StringErr;
 use crate::types::executable::Runnable;
 use crate::types::frame_data::{FrameData, FuncBits};
 use crate::types::initializer::InitFromModule;
+use crate::types::ins_pool::{InsPool, InsVec};
 use crate::types::label_data::LabelData;
 use crate::types::memory::Memory;
 use crate::types::offset::Offset;
 use crate::types::table::Table;
 use crate::utils::VecUtils;
-use crate::types::ins_pool::{InsVec, InsPool};
 
 const MAX_SIGNED_INT: u64 = 0x7fffffff;
 
@@ -34,7 +34,6 @@ impl WASMFunction {
     pub(crate) fn local_len(&self) -> u32 {
         self.locals.iter().map(|x| x.count()).sum()
     }
-
 }
 
 #[derive(Clone)]
@@ -92,8 +91,6 @@ pub struct Instance {
     arity: bool,
     is_loop: bool,
     stack_pc: u16,
-
-
 
     // static region
     pub(crate) functions: Vec<FunctionInstance>,
@@ -158,10 +155,12 @@ impl Instance {
     }
 
 
-    pub fn execute(&mut self, name: &str, args: &[u64]) -> Result<u64, StringErr> {
+    pub fn execute(&mut self, name: &str, args: &[u64]) -> Result<Option<u64>, StringErr> {
         let fun = get_or_err!(self.exports, name, "function not found");
         self.push_frame(fun.clone(), Some(args.to_vec()));
-        Ok(self.run()?)
+        let arity = self.result_type.is_some();
+        let r = self.run()?;
+        Ok(if arity { Some(r) } else { None })
     }
 
     pub(crate) fn execute_expr(&mut self, expr: InsVec, value_type: ValueType) -> Result<u64, StringErr> {
@@ -202,7 +201,7 @@ impl Instance {
         self.label_pc = if self.is_loop {
             0
         } else {
-           self.label_body.size() as u16
+            self.label_body.size() as u16
         };
         Ok(())
     }
@@ -222,7 +221,7 @@ impl Instance {
     fn save_label(&mut self) {
         let p = self.label_base + (self.label_size as u32) - 1;
         self.labels[p as usize] = self.label_body;
-        let data = LabelData::new(self.stack_pc, self.label_pc,  self.arity, self.is_loop);
+        let data = LabelData::new(self.stack_pc, self.label_pc, self.arity, self.is_loop);
         self.label_data[p as usize] = data;
     }
 
@@ -263,6 +262,11 @@ impl Instance {
         Ok(())
     }
 
+    pub(crate) fn peek_unchecked(&self) -> u64 {
+        let base = self.stack_base + (self.local_size as u32);
+        self.stack_data[(base + (self.stack_size as u32) - 1) as usize]
+    }
+
     pub(crate) fn peek(&self) -> Result<u64, String> {
         let base = self.stack_base + (self.local_size as u32);
         if self.stack_size == 0 {
@@ -288,7 +292,7 @@ impl Instance {
         Ok(v)
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.stack_data.fill(0);
         self.count = 0;
         self.label_data.fill(LabelData(0));
@@ -511,7 +515,7 @@ impl Instance {
     pub(crate) fn print_stack(&self) {
         let mut stack_base = self.stack_base + self.local_size as u32;
         print!("stack = {}", '[');
-        for i in stack_base..stack_base+self.stack_size as u32{
+        for i in stack_base..stack_base + self.stack_size as u32 {
             print!("{}", self.stack_data[i as usize]);
             print!("{}", ',');
         }
@@ -519,7 +523,7 @@ impl Instance {
 
         stack_base = self.stack_base;
         print!("local = {}", '[');
-        for i in stack_base..stack_base+self.local_size as u32{
+        for i in stack_base..stack_base + self.local_size as u32 {
             print!("{}", self.stack_data[i as usize]);
             print!("{}", ',');
         }
@@ -527,7 +531,7 @@ impl Instance {
 
         let label_base = self.label_base;
         print!("labels = {}", '[');
-        for i in label_base..label_base+self.label_size as u32 - 1{
+        for i in label_base..label_base + self.label_size as u32 - 1 {
             print!("{}", self.labels[i as usize].0);
             print!("{}", ',');
         }
@@ -543,7 +547,6 @@ impl Instance {
         // }
         //
         // print!("{}", "]\n");
-
     }
 
     pub(crate) fn push_label(
@@ -609,6 +612,6 @@ mod test {
 
         let end = SystemTime::now();
         let dur = end.duration_since(start);
-        println!("ops = {}", (loops as f64) * 1000.0 / (dur.unwrap().as_millis() as f64))
+        println!("ops = {} ", (loops as f64) * 1000.0 / (dur.unwrap().as_millis() as f64))
     }
 }

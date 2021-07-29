@@ -178,6 +178,22 @@ macro_rules! bin_cmp_f32 {
     };
 }
 
+macro_rules! check_div0 {
+    ($this: ident, $cast: ident) => {
+        if $this.peek_unchecked() as $cast == 0 {
+            return Err(StringErr::new("divided by zero"));
+        }
+    };
+}
+
+macro_rules! check_div0_f {
+    ($this: ident, $cast: ident, $ca: ident) => {
+        if $cast::from_bits($this.peek_unchecked() as $ca) == (0 as $cast) {
+            return Err(StringErr::new("divided by zero"));
+        }
+    };
+}
+
 macro_rules! bin_cmp_f64 {
     ($this: ident, $op: ident) => {
         {
@@ -194,12 +210,6 @@ pub(crate) trait Runnable {
     fn invoke(&mut self, ins: InsBits) -> Result<(), StringErr>;
 }
 
-fn cnt() -> u64 {
-    unsafe { CNT }
-}
-
-#[cfg(test)]
-static mut CNT: u64 = 0;
 
 impl Runnable for Instance {
     fn run(&mut self) -> Result<u64, StringErr> {
@@ -324,11 +334,8 @@ impl Runnable for Instance {
                 self.set_local(ins.payload(), v)?
             }
             opcodes::TEELOCAL => {
-                let v = self.pop()?;
-                self.push(v)?;
-                self.push(v)?;
-                let v1 = self.pop()?;
-                self.set_local(ins.payload(), v1)?;
+                let v = *self.top()?;
+                self.set_local(ins.payload(), v)?;
             }
             opcodes::GETGLOBAL => {
                 let v = get_or_err!(self.globals, ins.payload() as usize, "access global overflow");
@@ -434,15 +441,19 @@ impl Runnable for Instance {
                 }
             }
             opcodes::I32DIVS => {
+                check_div0!(self, u32);
                 bin_cast!(self, i32, div);
             }
             opcodes::I32DIVU => {
+                check_div0!(self, u32);
                 bin_cast!(self, u32, div);
             }
             opcodes::I32REMS => {
+                check_div0!(self, u32);
                 bin_cast!(self, i32, rem);
             }
             opcodes::I32REMU => {
+                check_div0!(self, u32);
                 bin_cast!(self, u32, rem);
             }
             opcodes::I32SUB => {
@@ -524,15 +535,19 @@ impl Runnable for Instance {
                 unsafe { bin!(self, unchecked_mul) };
             }
             opcodes::I64DIVS => {
+                check_div0!(self, u64);
                 bin_cast!(self, i64, div);
             }
             opcodes::I64DIVU => {
+                check_div0!(self, u64);
                 bin!(self, div);
             }
             opcodes::I64REMS => {
+                check_div0!(self, u64);
                 bin_cast!(self, i64, rem);
             }
             opcodes::I64REMU => {
+                check_div0!(self, u64);
                 bin!(self, rem);
             }
             opcodes::I64AND => {
@@ -627,6 +642,7 @@ impl Runnable for Instance {
                 bin_f32!(self, mul);
             }
             opcodes::F32DIV => {
+                check_div0_f!(self, f32, u32);
                 bin_f32!(self, div);
             }
             opcodes::F32MIN => {
@@ -687,6 +703,7 @@ impl Runnable for Instance {
                 bin_f64!(self, mul);
             }
             opcodes::F64DIV => {
+                check_div0_f!(self, f64, u64);
                 bin_f64!(self, div);
             }
             opcodes::F64MIN => {

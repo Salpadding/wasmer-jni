@@ -286,7 +286,6 @@
         "trap": "exec: out of bounds memory access",
         "args": [
           "i32:-1"
-          // when i32 = 1, 1 + uint32.maxvalue = 0
         ],
         "function": "bad"
       }

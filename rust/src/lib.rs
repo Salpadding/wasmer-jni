@@ -17,6 +17,7 @@ use std::ptr::null_mut;
 use std::str::Utf8Error;
 use std::sync::PoisonError;
 
+
 // This is the interface to the JVM that we'll
 // call the majority of our methods on.
 use jni::JNIEnv;
@@ -39,7 +40,7 @@ use wasmer_engine_universal::Universal;
 use utils::{JNIUtil, ToVmType};
 use wasmer::wasmparser::Operator;
 
-mod types;
+pub mod types;
 mod hex;
 mod utils;
 
