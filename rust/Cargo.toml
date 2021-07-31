@@ -1,9 +1,3 @@
-[workspace]
-members = [
-    ".",
-    "main"
-]
-
 [package]
 name = "wasmer_jni"
 version = "0.1.0"

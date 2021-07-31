@@ -17,7 +17,6 @@ use std::ptr::null_mut;
 use std::str::Utf8Error;
 use std::sync::PoisonError;
 
-
 // This is the interface to the JVM that we'll
 // call the majority of our methods on.
 use jni::JNIEnv;
@@ -31,7 +30,7 @@ use jni::objects::{GlobalRef, JClass, JObject, JString, JValue, TypeArray};
 use jni::sys::{jbyteArray, jint, jlong, jlongArray, jobjectArray, jstring};
 use parity_wasm::SerializationError;
 use wasmer::{
-    CompileError, ExportError, Exports, Features, Function, FunctionType, ImportObject, imports,
+    imports, CompileError, ExportError, Exports, Features, Function, FunctionType, ImportObject,
     Instance, InstantiationError, Module, RuntimeError, Store, Type, Value,
 };
 use wasmer_compiler_singlepass::Singlepass;
@@ -40,13 +39,12 @@ use wasmer_engine_universal::Universal;
 use utils::{JNIUtil, ToVmType};
 use wasmer::wasmparser::Operator;
 
-pub mod types;
 mod hex;
 mod utils;
 
 const MAX_INSTANCES: usize = 1024;
 
-static mut INSTANCES: Vec<Option<Instance>> = vec![];
+static mut INSTANCES: [*mut Instance; MAX_INSTANCES] = [null_mut(); MAX_INSTANCES];
 
 macro_rules! jni_ret {
     ($ex: expr, $env: ident, $default: expr) => {
@@ -204,13 +202,11 @@ macro_rules! as_rt {
     }};
 }
 
-macro_rules! get_ins_by_id {
-    ($id: expr) => {{
-        INSTANCES
-            .get($id as usize)
-            .and_then(|x| x.as_ref())
-            .ok_or(StringErr("instance not found".into()))?
-    }};
+fn get_ins_by_id(id: usize) -> Result<utils::Raw<Instance>, StringErr> {
+    unsafe {
+        let p = INSTANCES[id];
+        utils::Raw::from_raw(p)
+    }
 }
 
 fn create_instance(
@@ -241,89 +237,83 @@ fn create_instance(
             r
         };
 
-        if INSTANCES.is_empty() {
-            for _ in 0..MAX_INSTANCES {
-                INSTANCES.push(None);
-            }
-        }
-
         for i in 0..MAX_INSTANCES {
-            let m = &mut INSTANCES[i];
+            let m = INSTANCES[i];
 
-            match m {
-                None => {
-                    let descriptor = i;
-                    // Use Singlepass compiler with the default settings
-                    let compiler = Singlepass::default();
-                    let mut features = Features::new();
-                    let mask = _features as u64;
+            if !m.is_null() {
+                continue;
+            }
 
-                    set_mask!(
-                        mask, features,
-                        threads, reference_types, simd, bulk_memory, multi_value,
-                        tail_call, module_linking, multi_memory, memory64
+            let descriptor = i;
+            // Use Singlepass compiler with the default settings
+            let compiler = Singlepass::default();
+            let mut features = Features::new();
+            let mask = _features as u64;
+
+            set_mask!(
+                mask,
+                features,
+                threads,
+                reference_types,
+                simd,
+                bulk_memory,
+                multi_value,
+                tail_call,
+                module_linking,
+                multi_memory,
+                memory64
+            );
+
+            // Create the store
+            let store = Store::new(&Universal::new(compiler).features(features).engine());
+            let bytes = env.convert_byte_array(_module)?;
+            let module = Module::new(&store, bytes)?;
+
+            let mut import_object = ImportObject::new();
+            let mut namespace = Exports::new();
+
+            for i in 0..hosts.len() {
+                let name = hosts[i].clone();
+                let n2 = name.clone();
+                let jvm = env.get_java_vm()?;
+                let s = sigs[i].clone();
+                let host_function_signature = FunctionType::new(s.clone().0, s.clone().1);
+                let host_function = Function::new(&store, &host_function_signature, move |_args| {
+                    let return_types = s.clone().1;
+                    let env = as_rt!(jvm.get_env());
+                    let jstr = as_rt!(env.new_string(name.clone()));
+                    let v = as_i64_vec!(_args, RuntimeError::new("unexpected param type"));
+
+                    let arr = env.call_static_method(
+                        "org/github/salpadding/wasmer/Natives",
+                        "onHostFunction",
+                        "(ILjava/lang/String;[J)[J",
+                        &[
+                            JValue::Int(descriptor as i32),
+                            JValue::Object(jstr.into()),
+                            JValue::Object(as_rt!(env.slice_to_jlong_array(&v)).into()),
+                        ],
                     );
+                    let arr = as_rt!(arr);
 
-                    // Create the store
-                    let store = Store::new(&Universal::new(compiler).features(features).engine());
-                    let bytes = env.convert_byte_array(_module)?;
-                    let module = Module::new(&store, bytes)?;
+                    let o = match arr {
+                        JValue::Object(o) => o,
+                        _ => return Err(RuntimeError::new("unexpected return type")),
+                    };
 
+                    let v = env.jlong_array_to_vec(o.into_inner());
+                    let v = as_rt!(v);
+                    return_types.convert(v)
+                });
+                namespace.insert(n2, host_function);
+            }
 
-                    let mut import_object = ImportObject::new();
-                    let mut namespace = Exports::new();
+            import_object.register("env", namespace);
 
-                    for i in 0..hosts.len() {
-                        let name = hosts[i].clone();
-                        let n2 = name.clone();
-                        let jvm = env.get_java_vm()?;
-                        let s = sigs[i].clone();
-                        let host_function_signature = FunctionType::new(s.clone().0, s.clone().1);
-                        let host_function =
-                            Function::new(&store, &host_function_signature, move |_args| {
-                                let return_types = s.clone().1;
-                                let env = as_rt!(jvm.get_env());
-                                let jstr = as_rt!(env.new_string(name.clone()));
-                                let v =
-                                    as_i64_vec!(_args, RuntimeError::new("unexpected param type"));
+            let instance = Instance::new(&module, &import_object)?;
 
-                                let arr = env.call_static_method(
-                                    "org/github/salpadding/wasmer/Natives",
-                                    "onHostFunction",
-                                    "(ILjava/lang/String;[J)[J",
-                                    &[
-                                        JValue::Int(descriptor as i32),
-                                        JValue::Object(jstr.into()),
-                                        JValue::Object(
-                                            as_rt!(env.slice_to_jlong_array(&v)).into(),
-                                        ),
-                                    ],
-                                );
-                                let arr = as_rt!(arr);
-
-                                let o = match arr {
-                                    JValue::Object(o) => o,
-                                    _ => return Err(RuntimeError::new("unexpected return type")),
-                                };
-
-                                let v = env.jlong_array_to_vec(o.into_inner());
-                                let v = as_rt!(v);
-                                return_types.convert(v)
-                            });
-                        namespace.insert(n2, host_function);
-                    }
-
-                    import_object.register("env", namespace);
-
-                    let instance = Instance::new(&module, &import_object)?;
-
-                    *m = Some(instance);
-                    return Ok(i as jint);
-                }
-                Some(_) => {
-                    continue;
-                }
-            };
+            INSTANCES[i] = utils::Raw::new(instance).forget();
+            return Ok(i as jint);
         }
         Err(StringErr("instance descriptor overflows".into()))
     }
@@ -336,7 +326,7 @@ fn execute(
     args: jlongArray,
 ) -> Result<jlongArray, StringErr> {
     unsafe {
-        let ins = get_ins_by_id!(id as usize);
+        let ins = get_ins_by_id(id as usize)?;
 
         let method = env.get_string(_method.into())?;
         let s = method.to_str()?;
@@ -352,19 +342,26 @@ fn execute(
         let a = &sig.params().convert(a)?;
         let results = fun.call(&a)?;
         let results = as_i64_vec!(results, StringErr("unsupported return type".into()));
-
         return env.slice_to_jlong_array(&results);
     }
 }
 
 fn close(env: JNIEnv, descriptor: jint) -> Result<(), StringErr> {
+    if descriptor as usize > unsafe { INSTANCES.len() } {
+        return Ok(());
+    }
     unsafe {
-        if descriptor as usize > INSTANCES.len() {
+        let ins = INSTANCES[descriptor as usize];
+
+        if ins.is_null() {
             return Ok(());
         }
-        INSTANCES[descriptor as usize] = None;
-        Ok(())
+
+        let mut raw = utils::Raw::from_raw(ins)?;
+        raw.free();
+        INSTANCES[descriptor as usize] = null_mut();
     }
+    Ok(())
 }
 
 fn get_memory(
@@ -374,7 +371,7 @@ fn get_memory(
     len: jint,
 ) -> Result<jbyteArray, StringErr> {
     unsafe {
-        let ins = get_ins_by_id!(descriptor as usize);
+        let ins = get_ins_by_id(descriptor as usize)?;
 
         let mut buf = vec![0u8; len as usize];
         let mem = ins.exports.get_memory("memory")?;
@@ -386,14 +383,9 @@ fn get_memory(
     }
 }
 
-fn set_memory(
-    env: JNIEnv,
-    descriptor: jint,
-    off: jint,
-    buf: jbyteArray,
-) -> Result<(), StringErr> {
+fn set_memory(env: JNIEnv, descriptor: jint, off: jint, buf: jbyteArray) -> Result<(), StringErr> {
     unsafe {
-        let ins = get_ins_by_id!(descriptor as usize);
+        let ins = get_ins_by_id(descriptor as usize)?;
         let bytes = env.convert_byte_array(buf)?;
         let mem = ins.exports.get_memory("memory")?;
         if (off as usize + bytes.len()) as usize > mem.data_unchecked().len() {
@@ -434,7 +426,7 @@ impl_from!(String);
 pub struct StringErr(pub String);
 
 impl StringErr {
-    fn new<T: Deref<Target=str>>(t: T) -> Self {
+    fn new<T: Deref<Target = str>>(t: T) -> Self {
         StringErr(t.to_string())
     }
 }

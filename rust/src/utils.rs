@@ -1,4 +1,7 @@
+use std::{mem, ptr::null_mut};
+
 use jni::{JNIEnv, sys::{jlongArray, jobjectArray}};
+use lazy_static::__Deref;
 use wasmer::{RuntimeError, Type, Val, Value};
 
 use crate::StringErr;
@@ -95,28 +98,62 @@ impl JNIUtil for JNIEnv<'_> {
     }
 }
 
-pub(crate) trait VecUtils {
-    type Item;
-
-    fn self_copy(&mut self, src: usize, dst: usize, len: usize);
-    fn fill_from(&mut self, src: usize, len: usize, elem: Self::Item);
+/**
+    use raw pointer safely
+    the owned memory will not dropped when leave out of scope 
+    you should manually free
+ */
+pub struct Raw<T> {
+    owned: Option<Box<T>>
 }
 
-impl<T> VecUtils for Vec<T>
-    where
-        T: Sized + Copy,
-{
-    type Item = T;
+impl<T> Drop for Raw<T> {
+    fn drop(&mut self) {
+        self.forget();
+    }
+}
 
-    fn self_copy(&mut self, src: usize, dst: usize, len: usize) {
-        for i in 0..len {
-            self[dst + i] = self[src + i];
+impl <T> Raw<T> {
+    // avoid the content refers by Raw pointer dropped when leave out of scope
+    pub fn forget(&mut self) -> *mut T {
+        let mut to_forget = None;
+        mem::swap(&mut to_forget, &mut self.owned);
+        match to_forget {
+            Some(x) => {
+                Box::leak(x)
+            }
+            None => null_mut()
         }
     }
 
-    fn fill_from(&mut self, src: usize, len: usize, elem: T) {
-        self[src..src + len].fill(elem);
+
+    pub fn free(&mut self) {
+        let mut to_forget = None;
+        mem::swap(&mut to_forget, &mut self.owned);   
+    }
+
+    pub fn new(t: T) -> Self {
+        Raw {
+            owned: Some(Box::new(t))
+        }
+    }
+
+    // create a raw pointer 
+    pub fn from_raw(p: *mut T) -> Result<Self, StringErr> {
+        if p.is_null() {
+            Err(StringErr::new("null pointer"))
+        } else {
+            Ok(Raw {
+                owned: unsafe { Some(std::boxed::Box::from_raw(p)) }
+            })
+        }
     }
 }
 
+impl <T> std::ops::Deref for Raw<T> {
+    type Target = T;
 
+    fn deref(&self) -> &T {
+        self.owned.as_ref().unwrap()
+    }
+}
