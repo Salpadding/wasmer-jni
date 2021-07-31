@@ -28,7 +28,6 @@ use jni::objects::{GlobalRef, JClass, JObject, JString, JValue, TypeArray};
 // We can't return one of the objects with lifetime information because the
 // lifetime checker won't let us.
 use jni::sys::{jbyteArray, jint, jlong, jlongArray, jobjectArray, jstring};
-use parity_wasm::SerializationError;
 use wasmer::{
     imports, CompileError, ExportError, Exports, Features, Function, FunctionType, ImportObject,
     Instance, InstantiationError, Module, RuntimeError, Store, Type, Value,
@@ -416,7 +415,6 @@ macro_rules! impl_from {
 impl_from!(RuntimeError);
 impl_from!(jni::errors::Error);
 impl_from!(Utf8Error);
-impl_from!(SerializationError);
 impl_from!(ExportError);
 impl_from!(InstantiationError);
 impl_from!(CompileError);
