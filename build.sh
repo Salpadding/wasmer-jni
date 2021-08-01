@@ -29,7 +29,6 @@ fi
 
 
 DIR=../java/src/main/resources/lib/"${SYS}"/$(uname -m)
-echo $DIR
 mkdir -p "${DIR}"
 
 if [[ $SYS == "linux" ]]; then

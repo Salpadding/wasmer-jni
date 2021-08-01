@@ -75,18 +75,6 @@ public class JNIUtil {
         }
     }
 
-    /**
-     * Export a library from classpath resources to a temporary file.
-     *
-     * @param libName the name of the library to attempt to export. This name should be
-     *  undecorated with file extensions and, in the case of *nix, "lib" prefixes.
-     * @return the exported temporary file
-     */
-    public static File exportLibrary(String libName) throws IOException {
-        OS os = getRunningOS();
-        String path = getPath(os, libName);
-        return exportResource(path, libName);
-    }
 
     /**
      * Gets a relative path for a library. The path will be of the form:
@@ -146,9 +134,15 @@ public class JNIUtil {
     private static OS getRunningOS() {
         String osName = System.getProperty("os.name").toLowerCase();
         String arch = System.getProperty("os.arch");
+
         if (!arch.equals("amd64") && !arch.equals("x86_64") && !arch.equals("aarch64")) {
             throw new IllegalStateException("Unknown or unsupported arch: " + arch);
         }
+
+        if(arch.equals("amd64")) {
+            arch = "x86_64";
+        }
+
         if (osName.startsWith("windows")) {
             return new OS("windows", arch, /* canDeleteEager */ false);
         } else if (osName.startsWith("linux")) {
