@@ -16,6 +16,7 @@ jobs:
     - name: Build
       run: |
         chmod +x ./build.sh
+        rustup default nightly
         ./build.sh
         pushd java
         ./gradlew test
