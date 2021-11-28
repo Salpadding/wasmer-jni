@@ -11,30 +11,30 @@ popd >>/dev/null
 pushd java/src/main/java
 
 javac com/github/salpadding/wasmer/JNIUtil.java
-LIB_FILE=`java com.github.salpadding.wasmer.JNIUtil`
-OS=`java com.github.salpadding.wasmer.JNIUtil OS`
+export LIB_FILE=`java com.github.salpadding.wasmer.JNIUtil`
+export OS=`java com.github.salpadding.wasmer.JNIUtil OS`
 rm -rf  com/github/salpadding/wasmer/*.class
-LIB_FILE=java/src/main/resources$LIB_FILE
+export LIB_FILE=java/src/main/resources$LIB_FILE
 
 echo "LIB_FILE=$LIB_FILE"
 
-LIB_DIR=`dirname $LIB_FILE`
+export LIB_DIR=`dirname $LIB_FILE`
 
 echo "LIB_DIR=$LIB_DIR"
 echo "OS=$OS"
 popd >>/dev/null
 
 mkdir -p $LIB_DIR
-BASE_NAME=`basename $LIB_FILE`
+export LIB_BASE_NAME=`basename $LIB_FILE`
 
-echo "BAENAME=$BASE_NAME"
+echo "BAENAME=$LIB_BASE_NAME"
 
 if [[ $OS == "linux" ]]; then
-  cp rust/target/release/$BASE_NAME $LIB_FILE
+  cp rust/target/release/$LIB_BASE_NAME $LIB_FILE
 elif [[ $OS == "windows" ]]; then
-  cp rust/target/release/$BASE_NAME $LIB_FILE
+  cp rust/target/release/$LIB_BASE_NAME $LIB_FILE
 elif [[ $OS == "osx" ]]; then
-  cp rust/target/release/$BASE_NAME $LIB_FILE
+  cp rust/target/release/$LIB_BASE_NAME $LIB_FILE
 else
     echo "invalid os type $SYS" 1>&2
     exit 1
