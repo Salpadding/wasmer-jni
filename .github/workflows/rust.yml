@@ -34,7 +34,7 @@ jobs:
         ./build.sh
         
     - name: Build on windows
-      if: startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'ubuntu')
+      if: startsWith(matrix.os, 'windows')
       run: |
         cd rust
         cargo build --release
