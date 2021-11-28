@@ -70,7 +70,7 @@ jobs:
         # Artifact name
         name: linux
         # A file, directory or wildcard pattern that describes what to upload
-        path: rust/target/release/lbwasmer_jni.so
+        path: rust/target/release/libwasmer_jni.so
         
         
     - name: Upload mac
@@ -80,7 +80,7 @@ jobs:
         # Artifact name
         name: osx
         # A file
-        path: rust/target/release/lbwasmer_jni.dylib
+        path: rust/target/release/libwasmer_jni.dylib
         
   jar:
     runs-on: ubuntu-latest
