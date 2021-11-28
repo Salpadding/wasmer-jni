@@ -1,9 +1,9 @@
-package org.github.salpadding.wasmer
+package com.github.salpadding.wasmer
 
 import kotlin.concurrent.withLock
 
 
-internal class MemoryImpl(var descriptor: Long): Memory{
+internal class MemoryImpl(var descriptor: Long): Memory {
     override fun read(off: Int, len: Int): ByteArray {
         if (off < 0 || len < 0) {
             throw RuntimeException("off or len shouldn't be negative")

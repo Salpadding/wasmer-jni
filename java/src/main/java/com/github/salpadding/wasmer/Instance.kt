@@ -1,4 +1,4 @@
-package org.github.salpadding.wasmer
+package com.github.salpadding.wasmer
 
 import java.lang.AutoCloseable
 import kotlin.concurrent.withLock

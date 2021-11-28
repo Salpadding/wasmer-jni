@@ -68,7 +68,7 @@ pub fn create_host(store: &wasmer::Store, sig: (Vec<Type>, Vec<Type>), jvm: jni:
         let ret_types = sig.1.clone();
         let env: JNIEnv = as_rt!(jvm.get_env());
         let v = as_i64_vec!(_args, RuntimeError::new("unexpected param type"));
-        let arr = env.call_static_method("org/github/salpadding/wasmer/Natives", "onHostFunction", "(II[J)[J", &[
+        let arr = env.call_static_method("com/github/salpadding/wasmer/Natives", "onHostFunction", "(II[J)[J", &[
             JValue::Int(ins),
             JValue::Int(host_id),
             JValue::Object(as_rt!(env.slice_to_jlong_array(&v)).into()),

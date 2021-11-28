@@ -1,4 +1,4 @@
-package org.github.salpadding.wasmer;
+package com.github.salpadding.wasmer;
 
 /**
  * TODO:

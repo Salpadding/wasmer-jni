@@ -41,7 +41,6 @@ pub trait JNIUtil {
 
     fn jbytes_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<Vec<u8>>, StringErr>;
 
-    fn jobject_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<jobject>, StringErr>;
 }
 
 impl JNIUtil for JNIEnv<'_> {

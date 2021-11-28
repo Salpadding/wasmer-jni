@@ -1,6 +1,6 @@
-package org.github.salpadding.wasmer
+package com.github.salpadding.wasmer
 
-import org.github.salpadding.wasmer.Instance.Companion.create
+import com.github.salpadding.wasmer.Instance.Companion.create
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 import org.junit.Test
