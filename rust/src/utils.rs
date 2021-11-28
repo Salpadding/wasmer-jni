@@ -4,7 +4,7 @@ use jni::{JNIEnv, sys::{jlongArray, jobjectArray}};
 use lazy_static::__Deref;
 use wasmer::{RuntimeError, Type, Val, Value};
 
-use crate::StringErr;
+use crate::{jobject, StringErr};
 
 pub trait ToVmType {
     fn convert(&self, src: Vec<i64>) -> Result<Vec<Val>, RuntimeError>;
@@ -39,8 +39,9 @@ pub trait JNIUtil {
 
     fn jstring_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<String>, StringErr>;
 
-
     fn jbytes_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<Vec<u8>>, StringErr>;
+
+    fn jobject_array_to_vec(&self, arr: jobjectArray) -> Result<Vec<jobject>, StringErr>;
 }
 
 impl JNIUtil for JNIEnv<'_> {
@@ -95,65 +96,5 @@ impl JNIUtil for JNIEnv<'_> {
         }
 
         Ok(v)
-    }
-}
-
-/**
-    use raw pointer safely
-    the owned memory will not dropped when leave out of scope 
-    you should manually free
- */
-pub struct Raw<T> {
-    owned: Option<Box<T>>
-}
-
-impl<T> Drop for Raw<T> {
-    fn drop(&mut self) {
-        self.forget();
-    }
-}
-
-impl <T> Raw<T> {
-    // avoid the content refers by Raw pointer dropped when leave out of scope
-    pub fn forget(&mut self) -> *mut T {
-        let mut to_forget = None;
-        mem::swap(&mut to_forget, &mut self.owned);
-        match to_forget {
-            Some(x) => {
-                Box::leak(x)
-            }
-            None => null_mut()
-        }
-    }
-
-
-    pub fn free(&mut self) {
-        let mut to_forget = None;
-        mem::swap(&mut to_forget, &mut self.owned);   
-    }
-
-    pub fn new(t: T) -> Self {
-        Raw {
-            owned: Some(Box::new(t))
-        }
-    }
-
-    // create a raw pointer 
-    pub fn from_raw(p: *mut T) -> Result<Self, StringErr> {
-        if p.is_null() {
-            Err(StringErr::new("null pointer"))
-        } else {
-            Ok(Raw {
-                owned: unsafe { Some(std::boxed::Box::from_raw(p)) }
-            })
-        }
-    }
-}
-
-impl <T> std::ops::Deref for Raw<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        self.owned.as_ref().unwrap()
     }
 }

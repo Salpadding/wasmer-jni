@@ -2,7 +2,8 @@ package org.github.salpadding.wasmer
 
 import kotlin.concurrent.withLock
 
-internal class MemoryImpl(private val descriptor: Int): Memory{
+
+internal class MemoryImpl(var descriptor: Long): Memory{
     override fun read(off: Int, len: Int): ByteArray {
         if (off < 0 || len < 0) {
             throw RuntimeException("off or len shouldn't be negative")
@@ -18,25 +19,25 @@ internal class MemoryImpl(private val descriptor: Int): Memory{
     }
 }
 
-internal class InstanceImpl(private val descriptor: Int) : Instance {
-    override val id: Int
-        get() = descriptor
+internal class InstanceImpl : Instance {
+    var descriptor: Long = 0
+    var id: Int = 0
 
-    private val mem = MemoryImpl(descriptor)
+    var mem: Memory? = null
 
     override fun getMemory(name: String): Memory {
-        return mem
+        return mem!!
     }
-
 
     override fun execute(export: String, args: LongArray): LongArray {
         return Natives.execute(descriptor, export, args)
     }
 
     override fun close() {
-        Natives.GLOBAL_LOCK.withLock {
-            Natives.HOSTS[descriptor] = null
-            Natives.close(descriptor)
+        Natives.close(descriptor)
+        Natives.MUTEX.withLock {
+            Natives.INSTANCES[this.id] = null
+            Natives.HOST_FUNCTIONS[this.id] = null
         }
     }
 }

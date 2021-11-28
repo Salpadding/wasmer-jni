@@ -43,6 +43,7 @@ class WasmTest {
 
     @Test
     fun test1() {
+        Natives.initialize(8);
         val bin = TestUtil.readClassPathFile("testdata/wasm.wasm")
 
         create(bin, Options.empty(), listOf(EmptyHost("alert"), MemoryPeek())).use {

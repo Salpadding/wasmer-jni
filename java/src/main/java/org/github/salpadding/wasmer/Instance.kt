@@ -12,11 +12,6 @@ interface Memory {
  * Instance is not thread safe, dont share Instance object between threads
  */
 interface Instance : AutoCloseable {
-    /**
-     * id of instance, works like file descriptor
-     */
-    val id: Int
-
     fun getMemory(name: String = "memory"): Memory
 
 
@@ -34,20 +29,33 @@ interface Instance : AutoCloseable {
         @JvmStatic
         fun create(bin: ByteArray, options: Options, hosts: Collection<HostFunction>?): Instance {
             val names = hosts?.map { it.name }?.toTypedArray() ?: emptyArray()
-            val m = hosts?.associate { Pair(it.name, it) }
-
-            if (m?.size != hosts?.size) {
-                throw RuntimeException("duplicate host function names found in ${hosts?.map{ it.name }}")
-            }
+            val hostsArray = hosts?.toTypedArray() ?: emptyArray();
 
             val sigs = hosts?.map { Natives.encodeSignature(it.signature) }?.toTypedArray() ?: emptyArray()
-            Natives.GLOBAL_LOCK.withLock {
-                val descriptor = Natives.createInstance(bin, options.bitmap(), names, sigs)
-                Natives.HOSTS[descriptor] = m ?: emptyMap<Any, Any>()
-                val ins = InstanceImpl(descriptor)
-                Natives.INSTANCES[descriptor] = ins
-                return ins
+            val ins = InstanceImpl()
+            var insId = -1
+
+            Natives.MUTEX.withLock {
+                for (i in 0 until Natives.INSTANCES.size) {
+                    if (Natives.INSTANCES[i] == null) {
+                        Natives.INSTANCES[i] = ins
+                        insId = i
+                        break
+                    }
+                }
             }
+
+            if (insId < 0) {
+                throw RuntimeException("failed to create instance, consider close some instances")
+            }
+
+            ins.id = insId
+            Natives.HOST_FUNCTIONS[insId] = hostsArray
+
+            val descriptor = Natives.createInstance(bin, options.bitmap(), insId, names, sigs)
+            ins.descriptor = descriptor
+            ins.mem = MemoryImpl(descriptor)
+            return ins
         }
     }
 }
