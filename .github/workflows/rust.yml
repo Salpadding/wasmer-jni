@@ -64,7 +64,7 @@ jobs:
         path: rust/target/release/wasmer_jni.dll
         
     - name: Upload linux
-      if: startsWith(matrix.os, 'linux')
+      if: startsWith(matrix.os, 'ubuntu')
       uses: actions/upload-artifact@v2.2.4
       with:
         # Artifact name
