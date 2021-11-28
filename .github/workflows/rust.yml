@@ -8,8 +8,10 @@ env:
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v2
@@ -18,5 +20,3 @@ jobs:
         chmod +x ./build.sh
         rustup default nightly
         ./build.sh
-        pushd java
-        ./gradlew test
