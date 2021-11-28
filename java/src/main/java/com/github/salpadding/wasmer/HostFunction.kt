@@ -17,10 +17,6 @@ enum class ValType {
 }
 
 interface HostFunction {
-    fun empty(): LongArray {
-        return EMPTY
-    }
-
     /**
      * the name of host function
      */
@@ -38,8 +34,7 @@ interface HostFunction {
 
 
     companion object {
-        val EMPTY = LongArray(0)
-
-
+        @JvmStatic
+        val emptyLongs = LongArray(0)
     }
 }

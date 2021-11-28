@@ -1,23 +1,3 @@
-# wasmer-jni
-
-wasmer jni binding, support host function, memory read/write
-
-TODO:
-
-1. support metering 
-2. module validation
-3. memory/frame/stack and other resources limitaion
-4. multiple compiler choice, current is single
-
-
-
-## How to use?
-
-1. add wasmer_jni.jar to your project
-
-2. example code: 
-
-```java
 package com.github.salpadding.wasmer.example;
 
 
@@ -29,23 +9,20 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-// a host function example
+
 class MemoryPeek implements HostFunction {
     @NotNull
     @Override
-    // name of host function
     public String getName() {
         return "__peek";
     }
 
     @NotNull
     @Override
-    // args are aligned to long 
     public long[] execute(@NotNull Instance inst, @NotNull long[] args) {
         int off = (int) args[0];
         int len = (int) args[1];
 
-        // read data from memory
         byte[] data = inst.getMemory("memory").read(off, len);
 
         for (byte b : data) {
@@ -95,7 +72,6 @@ class EmptyHost implements HostFunction {
 
 public class Example {
     public static void main(String[] args) {
-        // initialize Native class
         Natives.initialize(1024);
         byte[] bin = TestUtil.readClassPathFile("testdata/wasm.wasm");
         Instance ins = Instance.create(bin, Options.empty(), Arrays.asList(new EmptyHost("alert"), new MemoryPeek()));
@@ -113,4 +89,3 @@ public class Example {
         }
     }
 }
-```

@@ -19,7 +19,7 @@ class MemoryPeek: HostFunction {
 
         inst.getMemory().write(off, byteArrayOf(0, 0, 0, 1))
 
-        return empty()
+        return HostFunction.emptyLongs
     }
 
     override val signature: Pair<List<ValType>, List<ValType>>
@@ -30,7 +30,7 @@ class MemoryPeek: HostFunction {
 class EmptyHost(override val name: String) : HostFunction {
     override fun execute(inst: Instance, args: LongArray): LongArray {
        println("======= host function executed " + args[0])
-        return empty()
+        return HostFunction.emptyLongs
     }
 
     override val signature: Pair<List<ValType>, List<ValType>>

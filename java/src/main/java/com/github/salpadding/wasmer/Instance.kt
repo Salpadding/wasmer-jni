@@ -58,4 +58,6 @@ interface Instance : AutoCloseable {
             return ins
         }
     }
+
+    override fun close()
 }
