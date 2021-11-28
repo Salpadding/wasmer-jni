@@ -45,6 +45,6 @@ fi
 popd>>/dev/null
 
 pushd java>>/dev/null
-./gradlew jar
+./gradlew test
 
 popd>>/dev/null
