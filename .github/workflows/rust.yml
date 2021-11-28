@@ -32,6 +32,8 @@ jobs:
         chmod +x ./build.sh
         rustup default nightly
         ./build.sh
+        echo OS=$OS
+        echo LIB_BASE_NAME=$LIB_BASE_NAME
 
       
     - if: startsWith(matrix.os, 'windows')
@@ -40,4 +42,6 @@ jobs:
         chmod +x ./build.sh
         rustup default nightly
         ./build.sh
+        echo OS=$OS
+        echo LIB_BASE_NAME=$LIB_BASE_NAME        
 
