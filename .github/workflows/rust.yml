@@ -24,7 +24,7 @@ jobs:
         # The working directory this action should operate in
         working-directory: rust
         # The target dir that should be cleaned and persisted, defaults to `./target`
-        target-dir: rust/target  
+        target-dir: ./target  
   
     - name: Build on mac/linux
       if: startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'ubuntu')
