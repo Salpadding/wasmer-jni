@@ -155,5 +155,14 @@ public class JNIUtil {
     }
 
     private JNIUtil() {}
+
+    public static void main(String[] args) {
+        if (args.length > 0 && args[0].equals("OS")) {
+            System.out.println(getRunningOS().name);
+            return;
+        }
+
+        System.out.println(getPath(getRunningOS(), "wasmer_jni"));
+    }
 }
 

@@ -5,44 +5,41 @@ pushd $CUR >>/dev/null
 pushd rust >>/dev/null
 cargo build --release
 
-SYS=""
+popd >>/dev/null
 
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-  SYS="linux"
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-  SYS="osx"
-elif [[ "$OSTYPE" == "cygwin" ]]; then
-    echo "invalid os type $OSTYPE" 1>&2
-    exit 1
-elif [[ "$OSTYPE" == "msys" ]]; then
-    echo "invalid os type $OSTYPE" 1>&2
-    exit 1
-elif [[ "$OSTYPE" == "win32" ]]; then
-  SYS="windows"
-elif [[ "$OSTYPE" == "freebsd"* ]]; then
-    echo "invalid os type $OSTYPE" 1>&2
-    exit 1
-else
-    echo "invalid os type $OSTYPE" 1>&2
-    exit 1
-fi
+# run JNIUtil to get OS and destination 
+pushd java/src/main/java
 
+javac com/github/salpadding/wasmer/JNIUtil.java
+LIB_FILE=`java com.github.salpadding.wasmer.JNIUtil`
+OS=`java com.github.salpadding.wasmer.JNIUtil OS`
+rm -rf  com/github/salpadding/wasmer/*.class
+LIB_FILE=java/src/main/resources$LIB_FILE
 
-DIR=../java/src/main/resources/lib/"${SYS}"/$(uname -m)
-mkdir -p "${DIR}"
+echo "LIB_FILE=$LIB_FILE"
 
-if [[ $SYS == "linux" ]]; then
-  cp target/release/*.so $DIR
-elif [[ $SYS == "windows" ]]; then
-  cp target/release/*.dll $DIR
-elif [[ $SYS == "osx" ]]; then
-  cp target/release/*.dylib $DIR
+LIB_DIR=`dirname $LIB_FILE`
+
+echo "LIB_DIR=$LIB_DIR"
+echo "OS=$OS"
+popd >>/dev/null
+
+mkdir -p $LIB_DIR
+BASE_NAME=`basename $LIB_FILE`
+
+echo "BAENAME=$BASE_NAME"
+
+if [[ $OS == "linux" ]]; then
+  cp rust/target/release/$BASE_NAME $LIB_FILE
+elif [[ $OS == "windows" ]]; then
+  cp rust/target/release/$BASE_NAME $LIB_FILE
+elif [[ $OS == "osx" ]]; then
+  cp rust/target/release/$BASE_NAME $LIB_FILE
 else
     echo "invalid os type $SYS" 1>&2
     exit 1
 fi
 
-popd>>/dev/null
 
 pushd java>>/dev/null
 ./gradlew test
