@@ -32,10 +32,12 @@ jobs:
         chmod +x ./build.sh
         rustup default nightly
         ./build.sh
-        
-    - name: Build on windows
-      if: startsWith(matrix.os, 'windows')
+
+      
+    - if: startsWith(matrix.os, 'windows')
+      shell: bash    
       run: |
-        cd rust
-        cargo build --release
+        chmod +x ./build.sh
+        rustup default nightly
+        ./build.sh
 
