@@ -1,24 +1,22 @@
 package com.github.salpadding.wasmer;
 
-import kotlin.Pair;
-
 import java.util.List;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class Natives {
+    static final Lock MUTEX = new ReentrantLock();
     static Instance[] INSTANCES;
     static HostFunction[][] HOST_FUNCTIONS;
-    static final Lock MUTEX = new ReentrantLock();
+
+    static {
+        JNIUtil.loadLibrary("wasmer_jni");
+    }
 
     public static void initialize(int maxInstances) {
         if (INSTANCES != null) return;
         Natives.INSTANCES = new Instance[maxInstances];
         Natives.HOST_FUNCTIONS = new HostFunction[maxInstances][];
-    }
-
-    static {
-        JNIUtil.loadLibrary("wasmer_jni");
     }
 
     /**
@@ -46,19 +44,19 @@ public class Natives {
     static native void close(long descriptor);
 
 
-    public static byte[] encodeSignature(Pair<List<ValType>, List<ValType>> sig) {
-        byte[] ret = new byte[1 + sig.component1().size()];
+    public static byte[] encodeSignature(List<ValType> params, List<ValType> r) {
+        byte[] ret = new byte[1 + params.size()];
 
-        if (sig.component2().size() > 1)
+        if (r.size() > 1)
             throw new RuntimeException("multi return value is not supported");
 
-        if (sig.component2().isEmpty())
+        if (r.isEmpty())
             ret[0] = (byte) 0xff;
         else
-            ret[0] = sig.component2().get(0).value();
+            ret[0] = r.get(0).value();
 
-        for (int i = 0; i < sig.component1().size(); i++) {
-            ret[i + 1] = sig.component1().get(i).value();
+        for (int i = 0; i < params.size(); i++) {
+            ret[i + 1] = params.get(i).value();
         }
 
         return ret;

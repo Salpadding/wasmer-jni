@@ -2,8 +2,6 @@ package com.github.salpadding.wasmer.example;
 
 
 import com.github.salpadding.wasmer.*;
-import kotlin.Pair;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -11,15 +9,13 @@ import java.util.List;
 
 
 class MemoryPeek implements HostFunction {
-    @NotNull
     @Override
     public String getName() {
         return "__peek";
     }
 
-    @NotNull
     @Override
-    public long[] execute(@NotNull Instance inst, @NotNull long[] args) {
+    public long[] execute(Instance inst, long[] args) {
         int off = (int) args[0];
         int len = (int) args[1];
 
@@ -30,43 +26,46 @@ class MemoryPeek implements HostFunction {
         }
 
         System.out.println();
-        return HostFunction.getEmptyLongs();
+        return Instance.EMPTY_LONGS;
     }
 
-    @NotNull
     @Override
-    public Pair<List<ValType>, List<ValType>> getSignature() {
-        return new Pair<>(
-                Arrays.asList(ValType.I32, ValType.I32),
-                Collections.emptyList()
-        );
+    public List<ValType> getParams() {
+        return Arrays.asList(ValType.I32, ValType.I32);
+    }
+
+    @Override
+    public List<ValType> getRet() {
+        return Collections.emptyList();
     }
 }
 
 class EmptyHost implements HostFunction {
-    private String name;
+    private final String name;
 
     public EmptyHost(String name) {
         this.name = name;
     }
 
-    @NotNull
     @Override
     public String getName() {
         return name;
     }
 
-    @NotNull
     @Override
-    public long[] execute(@NotNull Instance inst, @NotNull long[] args) {
+    public long[] execute(Instance inst, long[] args) {
         System.out.println("empty host function executed");
-        return HostFunction.getEmptyLongs();
+        return EMPTY_LONGS;
     }
 
-    @NotNull
     @Override
-    public Pair<List<ValType>, List<ValType>> getSignature() {
-        return new Pair<>(Collections.singletonList(ValType.I64), Collections.emptyList());
+    public List<ValType> getParams() {
+        return Collections.singletonList(ValType.I64);
+    }
+
+    @Override
+    public List<ValType> getRet() {
+        return Collections.emptyList();
     }
 }
 

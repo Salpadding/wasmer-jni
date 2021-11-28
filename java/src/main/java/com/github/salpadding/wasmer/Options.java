@@ -2,7 +2,7 @@ package com.github.salpadding.wasmer;
 
 /**
  * TODO:
- * add options for blockchain application: 
+ * add options for blockchain application:
  * 1. gas metering & gas limit, limit memory page
  * 2. disallow start section
  * 3. force memory with name = memory export
@@ -19,6 +19,13 @@ public class Options {
     private long multiMemory;
     private long memory64;
 
+    private Options() {
+    }
+
+    public static Options empty() {
+        return new Options();
+    }
+
     public Options threads(boolean threads) {
         this.threads = threads ? 0 : 1L;
         return this;
@@ -28,7 +35,6 @@ public class Options {
         this.referenceTypes = referenceTypes ? 0 : (1L << 1);
         return this;
     }
-
 
     public Options simd(boolean simd) {
         this.simd = simd ? 0 : (1L << 2);
@@ -67,12 +73,5 @@ public class Options {
 
     long bitmap() {
         return threads | referenceTypes | simd | bulkMemory | multiValue | tailCall | moduleLinking | multiMemory | memory64;
-    }
-
-    private Options() {
-    }
-
-    public static Options empty() {
-        return new Options();
     }
 }
