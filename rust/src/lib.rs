@@ -260,7 +260,7 @@ fn create_instance(
 
 
         // Create the store
-        let store = Store::new(&Universal::new(Cranelift::default()).features(features).engine());
+        let store = Store::new(&Universal::new(Singlepass::default()).features(features).engine());
         let bytes = env.convert_byte_array(_module)?;
         let module = Module::new(&store, bytes)?;
 
