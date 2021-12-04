@@ -8,10 +8,10 @@ edition = "2021"
 [dependencies]
 lazy_static = "1.4.0"
 jni = "0.19.0"
-wasmer = "2.0.0"
-wasmer-compiler-singlepass = "2.0.0"
-wasmer-compiler-cranelift = "2.0.0"
-wasmer-engine-universal = "2.0.0"
+wasmer = "2.1.0"
+wasmer-compiler-singlepass = "2.1.0"
+wasmer-compiler-cranelift = "2.1.0"
+wasmer-engine-universal = "2.1.0"
 
 [dev-dependencies]
 serde_json = "1.0"
