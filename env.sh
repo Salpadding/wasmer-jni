@@ -6,7 +6,7 @@ pushd $CUR >>/dev/null
 pushd java/src/main/java
 
 javac com/archeros/wasmer/JNIUtil.java
-export LIB_FILE=`java com.archeros.JNIUtil`
+export LIB_FILE=`java com.archeros.wasmer.JNIUtil`
 export OS=`java com.archeros.wasmer.JNIUtil OS`
 rm -rf  com/archeros/wasmer/*.class
 export LIB_FILE=java/src/main/resources$LIB_FILE
