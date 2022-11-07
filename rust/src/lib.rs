@@ -122,7 +122,7 @@ mod instance;
 
 // This keeps rust from "mangling" the name and making it unique for this crate.
 #[no_mangle]
-pub extern "system" fn Java_com_github_salpadding_wasmer_Natives_createInstance(
+pub extern "system" fn Java_com_archeros_wasmer_Natives_createInstance(
     env: JNIEnv,
     // this is the class that owns our
     // static method. Not going to be
@@ -143,7 +143,7 @@ pub extern "system" fn Java_com_github_salpadding_wasmer_Natives_createInstance(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_github_salpadding_wasmer_Natives_execute(
+pub extern "system" fn Java_com_archeros_wasmer_Natives_execute(
     env: JNIEnv,
     // this is the class that owns our
     // static method. Not going to be
@@ -158,7 +158,7 @@ pub extern "system" fn Java_com_github_salpadding_wasmer_Natives_execute(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_github_salpadding_wasmer_Natives_close(
+pub extern "system" fn Java_com_archeros_wasmer_Natives_close(
     env: JNIEnv,
     // this is the class that owns our
     // static method. Not going to be
@@ -171,7 +171,7 @@ pub extern "system" fn Java_com_github_salpadding_wasmer_Natives_close(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_github_salpadding_wasmer_Natives_getMemory(
+pub extern "system" fn Java_com_archeros_wasmer_Natives_getMemory(
     env: JNIEnv,
     // this is the class that owns our
     // static method. Not going to be
@@ -186,7 +186,7 @@ pub extern "system" fn Java_com_github_salpadding_wasmer_Natives_getMemory(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_github_salpadding_wasmer_Natives_setMemory(
+pub extern "system" fn Java_com_archeros_wasmer_Natives_setMemory(
     env: JNIEnv,
     // this is the class that owns our
     // static method. Not going to be

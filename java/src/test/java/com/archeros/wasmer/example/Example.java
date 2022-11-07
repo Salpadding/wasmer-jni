@@ -2,7 +2,6 @@ package com.archeros.wasmer.example;
 
 
 import com.archeros.wasmer.*;
-import com.github.salpadding.wasmer.*;
 
 import java.util.Arrays;
 import java.util.Collections;
