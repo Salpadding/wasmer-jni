@@ -1,4 +1,4 @@
-package com.github.salpadding.wasmer;
+package com.archeros.wasmer;
 
 public interface Memory {
     byte[] read(int off, int len);

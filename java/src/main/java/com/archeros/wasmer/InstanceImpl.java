@@ -1,4 +1,4 @@
-package com.github.salpadding.wasmer;
+package com.archeros.wasmer;
 
 
 class MemoryImpl implements Memory {

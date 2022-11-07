@@ -1,4 +1,4 @@
-package com.github.salpadding.wasmer;
+package com.archeros.wasmer;
 
 public enum ValType {
     I32, // 0
